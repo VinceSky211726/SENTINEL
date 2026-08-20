@@ -144,7 +144,15 @@ def load_portfolio_notify(client: Client) -> dict[str, PortfolioNotify]:
     }
 
 
-def load_pending(client: Client, limit: int) -> list[AlertEvent]:
+def load_pending(
+    client: Client,
+    portfolio: dict[str, PortfolioNotify],
+    limit: int,
+) -> list[AlertEvent]:
+    min_threshold = min(
+        (p.alert_threshold for p in portfolio.values()),
+        default=DEFAULT_THRESHOLD,
+    )
     rows = (
         client.table("events")
         .select(
@@ -154,13 +162,22 @@ def load_pending(client: Client, limit: int) -> list[AlertEvent]:
         .eq("notified", False)
         .eq("filter_passed", True)
         .eq("llm_processed", True)
+        .gte("impact_score", min_threshold)
         .order("impact_score", desc=True)
         .limit(limit)
         .execute()
         .data
         or []
     )
-    return [AlertEvent.model_validate(r) for r in rows]
+    events: list[AlertEvent] = []
+    for row in rows:
+        event = AlertEvent.model_validate(row)
+        line = portfolio.get(event.symbol)
+        threshold = line.alert_threshold if line else DEFAULT_THRESHOLD
+        impact = event.impact_score if event.impact_score is not None else 0
+        if impact >= threshold:
+            events.append(event)
+    return events
 
 
 def load_today_notified_impacts(
@@ -248,18 +265,30 @@ def skip_event(client: Client, event: AlertEvent, reason: str) -> None:
 def notify_event(
     client: Client,
     event: AlertEvent,
+    line: PortfolioNotify,
     token: str,
     chat_id: str,
 ) -> bool:
+    impact = event.impact_score if event.impact_score is not None else 0
+    if impact < line.alert_threshold:
+        log.error(
+            "Blocage Telegram %s · %s · impact=%s < seuil %s",
+            event.id[:8],
+            event.symbol,
+            impact,
+            line.alert_threshold,
+        )
+        return False
     try:
         message = format_message(event)
         send_telegram(token, chat_id, message)
         mark_notified(client, event.id)
         log.info(
-            "Notifié %s · %s · impact=%s",
+            "Notifié %s · %s · impact=%s (seuil %s)",
             event.id[:8],
             event.symbol,
             event.impact_score,
+            line.alert_threshold,
         )
         return True
     except Exception as exc:
@@ -281,7 +310,7 @@ def run() -> None:
 
     client = get_supabase()
     portfolio = load_portfolio_notify(client)
-    events = load_pending(client, LOAD_PENDING)
+    events = load_pending(client, portfolio, LOAD_PENDING)
     since = start_of_today_utc()
 
     if not events:
@@ -306,7 +335,7 @@ def run() -> None:
             skip_event(client, event, reason)
             skipped += 1
             continue
-        if notify_event(client, event, token, chat_id):
+        if notify_event(client, event, line, token, chat_id):
             sent += 1
             impact = event.impact_score if event.impact_score is not None else 0
             today_cache[event.symbol].append(impact)
