@@ -6,14 +6,14 @@ Interface Next.js 14 (App Router) pour le fil d’alertes Sentinel, branchée su
 
 - Node.js 18+
 - Projet Supabase SENTINEL avec tables `portfolio`, `events`, `feedback`, `source_registry`
-- Clé **anon** (publique) — pas la service key
+- Clé **publishable** (`sb_publishable_…`) — jamais la clé secrète / `service_role` (exposée dans le navigateur)
 
 ## Installation locale
 
 ```bash
 cd sentinel-dashboard
 cp .env.local.example .env.local
-# Renseigner NEXT_PUBLIC_SUPABASE_URL et NEXT_PUBLIC_SUPABASE_ANON_KEY
+# Renseigner NEXT_PUBLIC_SUPABASE_URL et NEXT_PUBLIC_SUPABASE_ANON_KEY (publishable)
 npm install
 npm run dev
 ```
@@ -39,7 +39,7 @@ La table `events` est publiée sur `supabase_realtime`. Les nouvelles alertes ap
 2. [vercel.com](https://vercel.com) → **Import Project** → dossier `sentinel-dashboard` (ou racine si monorepo)
 3. **Environment Variables** :
    - `NEXT_PUBLIC_SUPABASE_URL`
-   - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+   - `NEXT_PUBLIC_SUPABASE_ANON_KEY` → clé **publishable** (`sb_publishable_…`), pas `sb_secret_`
 4. Deploy
 
 Framework preset : **Next.js**. Build command : `npm run build`. Output : défaut.

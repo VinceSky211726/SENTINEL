@@ -47,8 +47,9 @@ export default async function HomePage() {
         <p className="mt-2 text-muted">
           Vérifie{" "}
           <code className="text-ice">NEXT_PUBLIC_SUPABASE_URL</code> et{" "}
-          <code className="text-ice">NEXT_PUBLIC_SUPABASE_ANON_KEY</code> dans{" "}
-          <code className="text-ice">.env.local</code>.
+          <code className="text-ice">NEXT_PUBLIC_SUPABASE_ANON_KEY</code>{" "}
+          (clé publishable <code className="text-ice">sb_publishable_…</code>, pas
+          la service key) dans <code className="text-ice">.env.local</code>.
         </p>
         <p className="mt-2 font-mono text-[10px] text-muted">
           {err instanceof Error ? err.message : "Erreur inconnue"}
