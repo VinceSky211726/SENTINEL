@@ -1,0 +1,6 @@
+Projet : Sentinel, veille financière personnelle, coût 0€.
+Stack : Python 3.12 (ingestion), Next.js + Supabase (dashboard), GitHub Actions (scheduler).
+Contraintes : zéro dépendance payante, fallback obligatoire si un service externe échoue.
+Pipeline : ingestion → filtrage heuristique (5 étages) → LLM (seulement sur ce qui reste) → notification Telegram.
+Ne jamais envoyer un item brut au LLM sans passer par le filtrage d'abord.
+Les secrets sont dans GitHub Secrets (Actions), les variables d'env se chargent depuis là.
