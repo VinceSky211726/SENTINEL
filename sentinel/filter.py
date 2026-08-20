@@ -9,11 +9,10 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
 from datasketch import MinHash
-from dotenv import load_dotenv
 from pydantic import BaseModel
-from supabase import Client, create_client
+from supabase import Client
 
-load_dotenv()
+from sentinel.config import get_supabase
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
 log = logging.getLogger(__name__)
@@ -69,12 +68,6 @@ class EventRow(BaseModel):
     raw_body: Optional[str] = None
     published_at: Optional[datetime] = None
     detected_at: Optional[datetime] = None
-
-
-def get_supabase() -> Client:
-    url = os.environ["SUPABASE_URL"]
-    key = os.environ.get("SUPABASE_SERVICE_KEY") or os.environ["SUPABASE_ANON_KEY"]
-    return create_client(url, key)
 
 
 def parse_ts(value: Optional[str]) -> Optional[datetime]:

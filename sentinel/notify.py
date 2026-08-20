@@ -9,11 +9,10 @@ from datetime import datetime, timezone
 from typing import Any, Optional
 
 import requests
-from dotenv import load_dotenv
 from pydantic import BaseModel, Field
-from supabase import Client, create_client
+from supabase import Client
 
-load_dotenv()
+from sentinel.config import get_supabase
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
 log = logging.getLogger(__name__)
@@ -35,12 +34,6 @@ class AlertEvent(BaseModel):
     sentiment: Optional[float] = None
     confidence_pct: Optional[int] = None
     sources: list[dict[str, Any]] = Field(default_factory=list)
-
-
-def get_supabase() -> Client:
-    url = os.environ["SUPABASE_URL"]
-    key = os.environ.get("SUPABASE_SERVICE_KEY") or os.environ["SUPABASE_ANON_KEY"]
-    return create_client(url, key)
 
 
 def get_telegram_config() -> tuple[str, str]:

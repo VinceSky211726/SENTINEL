@@ -13,11 +13,10 @@ from typing import Any, Optional
 from urllib.parse import quote
 
 import aiohttp
-from dotenv import load_dotenv
 from pydantic import BaseModel
-from supabase import Client, create_client
+from supabase import Client
 
-load_dotenv()
+from sentinel.config import get_supabase
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
 log = logging.getLogger(__name__)
@@ -57,12 +56,6 @@ class NormalizedItem(BaseModel):
     def content_hash(self) -> str:
         payload = f"{self.url}|{self.title}|{self.published_at.isoformat()}"
         return hashlib.sha256(payload.encode()).hexdigest()
-
-
-def get_supabase() -> Client:
-    url = os.environ["SUPABASE_URL"]
-    key = os.environ.get("SUPABASE_SERVICE_KEY") or os.environ["SUPABASE_ANON_KEY"]
-    return create_client(url, key)
 
 
 def load_portfolio(client: Client) -> list[PortfolioRow]:

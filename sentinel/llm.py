@@ -10,17 +10,16 @@ from datetime import datetime, timezone
 from typing import Any, Literal, Optional
 
 import httpx
-from dotenv import load_dotenv
 from pydantic import BaseModel, Field, ValidationError, field_validator
-from supabase import Client, create_client
+from supabase import Client
 
-load_dotenv()
+from sentinel.config import get_supabase
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
 log = logging.getLogger(__name__)
 
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3-flash-preview")
-GROQ_MODEL = os.getenv("GROQ_MODEL", "openai/gpt-oss-20b")
+GEMINI_MODEL = os.getenv("GEMINI_MODEL") or "gemini-3.1-flash-lite"
+GROQ_MODEL = os.getenv("GROQ_MODEL") or "openai/gpt-oss-20b"
 GEMINI_URL = (
     "https://generativelanguage.googleapis.com/v1beta/models/"
     f"{GEMINI_MODEL}:generateContent"
@@ -161,12 +160,6 @@ class LlmError(Exception):
     def __init__(self, message: str, status_code: Optional[int] = None):
         super().__init__(message)
         self.status_code = status_code
-
-
-def get_supabase() -> Client:
-    url = os.environ["SUPABASE_URL"]
-    key = os.environ.get("SUPABASE_SERVICE_KEY") or os.environ["SUPABASE_ANON_KEY"]
-    return create_client(url, key)
 
 
 def load_portfolio(client: Client) -> dict[str, PortfolioRow]:
