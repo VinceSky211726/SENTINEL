@@ -45,12 +45,17 @@ jobs:
       - name: Check secrets
         run: |
           python - <<'PY'
-          import sys
-          from sentinel.config import supabase_key, supabase_url
-          url = supabase_url()
-          key = supabase_key()
-          print(f"SUPABASE_URL={url}")
-          print(f"supabase key present ({len(key)} chars)")
+          import traceback
+          from sentinel.config import get_supabase, supabase_url
+          print(f"SUPABASE_URL={supabase_url()}")
+          try:
+              client = get_supabase()
+              n = len(client.table("portfolio").select("symbol").execute().data or [])
+              print(f"portfolio rows={n}")
+          except Exception as exc:
+              print(f"::error::Supabase auth failed: {exc}")
+              traceback.print_exc()
+              raise
           PY
 
       - name: Ingest

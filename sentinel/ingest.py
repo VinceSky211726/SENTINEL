@@ -298,7 +298,11 @@ async def run() -> None:
 
 
 def main() -> None:
-    asyncio.run(run())
+    try:
+        asyncio.run(run())
+    except Exception:
+        log.exception("Ingest failed")
+        raise
 
 
 if __name__ == "__main__":
