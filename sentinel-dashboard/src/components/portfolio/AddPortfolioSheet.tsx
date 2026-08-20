@@ -60,6 +60,8 @@ export function AddPortfolioSheet({
       is_active: true,
       sort_order: sortOrder,
       position_side: "long",
+      news_query: name,
+      finnhub_symbol: sym,
       sentiment_spark: [],
     });
 

@@ -37,6 +37,8 @@ export interface Database {
           is_active?: boolean;
           sort_order?: number;
           position_side?: string;
+          news_query?: string | null;
+          finnhub_symbol?: string | null;
           sentiment_spark?: unknown[];
         };
         Update: {
