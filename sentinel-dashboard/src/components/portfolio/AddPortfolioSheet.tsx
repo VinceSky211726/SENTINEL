@@ -56,6 +56,7 @@ export function AddPortfolioSheet({
       name,
       weight_pct: weight,
       alert_threshold: threshold,
+      max_alerts_per_day: 3,
       alerts_per_week_est: est,
       is_active: true,
       sort_order: sortOrder,
@@ -146,7 +147,7 @@ export function AddPortfolioSheet({
                 type="number"
                 min={20}
                 max={95}
-                defaultValue={65}
+                defaultValue={70}
                 className="w-full rounded-[10px] border border-line bg-panel px-3 py-2.5 text-[13px] text-white outline-none focus:border-ice"
               />
             </div>

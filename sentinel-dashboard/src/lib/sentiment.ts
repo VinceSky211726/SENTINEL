@@ -1,4 +1,5 @@
 import type { SentinelEvent } from "./types";
+import { eventContagionSymbols } from "./utils";
 
 const SPARK_LEN = 7;
 
@@ -50,7 +51,7 @@ export function computeSignalConsensus(
 ): SignalConsensus {
   const relevant = events.filter(
     (e) =>
-      (e.symbol === symbol || e.contagion_symbol === symbol) &&
+      (e.symbol === symbol || eventContagionSymbols(e).includes(symbol)) &&
       e.sentiment != null
   );
 

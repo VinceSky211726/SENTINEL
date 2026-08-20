@@ -1,4 +1,4 @@
-import type { SentinelEvent } from "./types";
+import type { PortfolioRow, SentinelEvent } from "./types";
 
 export function ringColor(score: number | null): string {
   if (score === null) return "var(--line)";
@@ -71,6 +71,32 @@ export function startOfTodayIso(): string {
   const d = new Date();
   d.setHours(0, 0, 0, 0);
   return d.toISOString();
+}
+
+export function eventContagionSymbols(event: SentinelEvent): string[] {
+  const fromArr = (event.contagion_symbols ?? []).filter(
+    (s) => Boolean(s) && s !== "—"
+  );
+  if (fromArr.length > 0) {
+    return Array.from(new Set(fromArr));
+  }
+  if (event.contagion_symbol && event.contagion_symbol !== "—") {
+    return [event.contagion_symbol];
+  }
+  return [];
+}
+
+export function countAlertsAboveThreshold(
+  events: Pick<SentinelEvent, "symbol" | "impact_score">[],
+  portfolio: Pick<PortfolioRow, "symbol" | "is_active" | "alert_threshold">[]
+): number {
+  const bySymbol = new Map(portfolio.map((p) => [p.symbol, p]));
+  return events.filter((e) => {
+    const line = bySymbol.get(e.symbol);
+    return Boolean(
+      line?.is_active && (e.impact_score ?? 0) >= line.alert_threshold
+    );
+  }).length;
 }
 
 export function eventTypeLabel(key: string, label?: string | null): string {

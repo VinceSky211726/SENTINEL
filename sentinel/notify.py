@@ -19,7 +19,9 @@ log = logging.getLogger(__name__)
 
 TELEGRAM_API = "https://api.telegram.org/bot{token}/sendMessage"
 MAX_NOTIFY = int(os.getenv("NOTIFY_MAX_ITEMS", "10"))
-MIN_IMPACT = int(os.getenv("NOTIFY_MIN_IMPACT", "5"))
+LOAD_PENDING = int(os.getenv("NOTIFY_LOAD_ITEMS", "50"))
+DEFAULT_THRESHOLD = 70
+DEFAULT_MAX_ALERTS = 3
 # Telegram MarkdownV2 — tous les caractères réservés hors inline code
 MDV2_ESCAPE = re.compile(r"([_*\[\]()~`>#+\-=|{}.!\\])")
 
@@ -34,6 +36,12 @@ class AlertEvent(BaseModel):
     sentiment: Optional[float] = None
     confidence_pct: Optional[int] = None
     sources: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class PortfolioNotify(BaseModel):
+    symbol: str
+    alert_threshold: int = DEFAULT_THRESHOLD
+    max_alerts_per_day: int = DEFAULT_MAX_ALERTS
 
 
 def get_telegram_config() -> tuple[str, str]:
@@ -110,6 +118,32 @@ def format_message(event: AlertEvent) -> str:
     )
 
 
+def start_of_today_utc() -> str:
+    now = datetime.now(timezone.utc)
+    return now.replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
+
+
+def load_portfolio_notify(client: Client) -> dict[str, PortfolioNotify]:
+    rows = (
+        client.table("portfolio")
+        .select("symbol, alert_threshold, max_alerts_per_day")
+        .eq("is_active", True)
+        .execute()
+        .data
+        or []
+    )
+    return {
+        r["symbol"]: PortfolioNotify(
+            symbol=r["symbol"],
+            alert_threshold=int(r.get("alert_threshold") or DEFAULT_THRESHOLD),
+            max_alerts_per_day=max(
+                1, int(r.get("max_alerts_per_day") or DEFAULT_MAX_ALERTS)
+            ),
+        )
+        for r in rows
+    }
+
+
 def load_pending(client: Client, limit: int) -> list[AlertEvent]:
     rows = (
         client.table("events")
@@ -127,6 +161,53 @@ def load_pending(client: Client, limit: int) -> list[AlertEvent]:
         or []
     )
     return [AlertEvent.model_validate(r) for r in rows]
+
+
+def load_today_notified_impacts(
+    client: Client, symbol: str, since: str, threshold: int
+) -> list[int]:
+    rows = (
+        client.table("events")
+        .select("impact_score")
+        .eq("symbol", symbol)
+        .eq("notified", True)
+        .eq("filter_passed", True)
+        .eq("llm_processed", True)
+        .gte("notified_at", since)
+        .execute()
+        .data
+        or []
+    )
+    return [
+        int(r["impact_score"])
+        for r in rows
+        if r.get("impact_score") is not None
+        and int(r["impact_score"]) >= threshold
+    ]
+
+
+def should_notify(
+    event: AlertEvent,
+    line: PortfolioNotify,
+    today_impacts: list[int],
+) -> tuple[bool, str]:
+    impact = event.impact_score if event.impact_score is not None else 0
+    if impact < line.alert_threshold:
+        return False, (
+            f"sous seuil {line.alert_threshold} (impact={impact})"
+        )
+
+    cap = line.max_alerts_per_day
+    if len(today_impacts) < cap:
+        return True, "ok"
+
+    ranked = sorted(today_impacts, reverse=True)[:cap]
+    weakest = ranked[-1]
+    if impact > weakest:
+        return True, f"remplace plus faible notifié ({weakest})"
+    return False, (
+        f"plafond {cap}/j atteint (plus faible notifié={weakest}, impact={impact})"
+    )
 
 
 def send_telegram(token: str, chat_id: str, text: str) -> None:
@@ -153,14 +234,14 @@ def mark_notified(client: Client, event_id: str) -> None:
     ).eq("id", event_id).execute()
 
 
-def skip_low_impact(client: Client, event: AlertEvent) -> None:
+def skip_event(client: Client, event: AlertEvent, reason: str) -> None:
     mark_notified(client, event.id)
     log.info(
-        "Ignoré %s · %s · impact=%s (< seuil %d)",
+        "Ignoré %s · %s · impact=%s — %s",
         event.id[:8],
         event.symbol,
         event.impact_score,
-        MIN_IMPACT,
+        reason,
     )
 
 
@@ -199,7 +280,9 @@ def run() -> None:
         return
 
     client = get_supabase()
-    events = load_pending(client, MAX_NOTIFY)
+    portfolio = load_portfolio_notify(client)
+    events = load_pending(client, LOAD_PENDING)
+    since = start_of_today_utc()
 
     if not events:
         log.info("Aucune alerte à notifier.")
@@ -208,18 +291,30 @@ def run() -> None:
     sent = 0
     failed = 0
     skipped = 0
+    today_cache: dict[str, list[int]] = {}
+
     for event in events:
-        if event.impact_score is not None and event.impact_score < MIN_IMPACT:
-            skip_low_impact(client, event)
+        if sent >= MAX_NOTIFY:
+            break
+        line = portfolio.get(event.symbol) or PortfolioNotify(symbol=event.symbol)
+        if event.symbol not in today_cache:
+            today_cache[event.symbol] = load_today_notified_impacts(
+                client, event.symbol, since, line.alert_threshold
+            )
+        ok, reason = should_notify(event, line, today_cache[event.symbol])
+        if not ok:
+            skip_event(client, event, reason)
             skipped += 1
             continue
         if notify_event(client, event, token, chat_id):
             sent += 1
+            impact = event.impact_score if event.impact_score is not None else 0
+            today_cache[event.symbol].append(impact)
         else:
             failed += 1
 
     log.info(
-        "Notifications terminées : %d envoyées, %d ignorées (impact), %d échecs.",
+        "Notifications terminées : %d envoyées, %d ignorées (seuil/plafond), %d échecs.",
         sent,
         skipped,
         failed,

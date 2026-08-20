@@ -7,7 +7,7 @@ import type {
   SourceRegistryRow,
 } from "./types";
 import { EVENT_FEED_SELECT } from "./types";
-import { compressionRatioLabel, startOfTodayIso } from "./utils";
+import { compressionRatioLabel, startOfTodayIso, countAlertsAboveThreshold } from "./utils";
 
 export async function fetchFeedEvents(): Promise<SentinelEvent[]> {
   const supabase = createServerClient();
@@ -43,7 +43,7 @@ export async function fetchPortfolio(): Promise<PortfolioRow[]> {
   const { data, error } = await supabase
     .from("portfolio")
     .select(
-      "id, symbol, name, weight_pct, alert_threshold, is_active, sentiment_score, sentiment_spark, alerts_per_week_est, position_side, sort_order"
+      "id, symbol, name, weight_pct, alert_threshold, is_active, sentiment_score, sentiment_spark, alerts_per_week_est, position_side, sector, max_alerts_per_day, sort_order"
     )
     .order("sort_order", { ascending: true });
 
@@ -107,7 +107,7 @@ export async function fetchBriefStats(
   const supabase = createServerClient();
   const since = startOfTodayIso();
 
-  const [todayEventsRes, watchRes, filteredRes, alertsRes] = await Promise.all([
+  const [todayEventsRes, watchRes, filteredRes, todayAlertsRes] = await Promise.all([
     supabase
       .from("events")
       .select("sentiment")
@@ -130,10 +130,12 @@ export async function fetchBriefStats(
       .gte("detected_at", since),
     supabase
       .from("events")
-      .select("id", { count: "exact", head: true })
+      .select("id, symbol, impact_score")
       .eq("filter_passed", true)
-      .eq("notified", true)
-      .gte("notified_at", since),
+      .eq("llm_processed", true)
+      .not("title", "is", null)
+      .not("impact_score", "is", null)
+      .gte("detected_at", since),
   ]);
 
   const sentiments = (todayEventsRes.data ?? [])
@@ -160,7 +162,13 @@ export async function fetchBriefStats(
     watchItems: normalizeEvents(watchRes.data ?? []),
     calmSymbols,
     filteredToday: filteredRes.count ?? 0,
-    alertsToday: alertsRes.count ?? 0,
+    alertsToday: countAlertsAboveThreshold(
+      (todayAlertsRes.data ?? []) as Pick<
+        SentinelEvent,
+        "symbol" | "impact_score"
+      >[],
+      portfolio
+    ),
   };
 }
 
@@ -215,6 +223,15 @@ function normalizeEvent(row: Record<string, unknown>): SentinelEvent {
     sources: Array.isArray(row.sources) ? (row.sources as SentinelEvent["sources"]) : [],
     sentiment: row.sentiment != null ? Number(row.sentiment) : null,
     impact_score: row.impact_score != null ? Number(row.impact_score) : null,
+    mecanisme: typeof row.mecanisme === "string" ? row.mecanisme : null,
+    lecture_position:
+      typeof row.lecture_position === "string" ? row.lecture_position : null,
+    reserve: typeof row.reserve === "string" ? row.reserve : null,
+    contagion_symbols: Array.isArray(row.contagion_symbols)
+      ? (row.contagion_symbols as string[]).filter(Boolean)
+      : row.contagion_symbol
+        ? [String(row.contagion_symbol)]
+        : [],
   };
 }
 
@@ -231,5 +248,8 @@ function normalizePortfolio(row: Record<string, unknown>): PortfolioRow {
       row.alerts_per_week_est != null
         ? Number(row.alerts_per_week_est)
         : null,
+    sector: typeof row.sector === "string" ? row.sector : null,
+    max_alerts_per_day:
+      row.max_alerts_per_day != null ? Number(row.max_alerts_per_day) : 3,
   };
 }

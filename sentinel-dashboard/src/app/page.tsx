@@ -4,7 +4,7 @@ import {
   fetchFeedEvents,
   fetchPortfolio,
 } from "@/lib/queries";
-import { compressionRatioLabel } from "@/lib/utils";
+import { compressionRatioLabel, countAlertsAboveThreshold, startOfTodayIso } from "@/lib/utils";
 import { AlertFeed } from "@/components/feed/AlertFeed";
 
 export default async function HomePage() {
@@ -16,14 +16,11 @@ export default async function HomePage() {
       fetchEventTypeKeys(),
     ]);
 
-    const portfolioBySymbol = new Map(portfolio.map((p) => [p.symbol, p]));
-    const alertsAbove = events.filter((e) => {
-      const line = portfolioBySymbol.get(e.symbol);
-      return (
-        line?.is_active &&
-        (e.impact_score ?? 0) >= line.alert_threshold
-      );
-    }).length;
+    const since = startOfTodayIso();
+    const alertsAbove = countAlertsAboveThreshold(
+      events.filter((e) => e.detected_at >= since),
+      portfolio
+    );
 
     return (
       <AlertFeed

@@ -80,11 +80,11 @@ HORIZON_TO_DB: dict[str, HorizonKey] = {
     "structurel": "structural",
 }
 
-# Prompt section 2.3 — texte exact
+# Prompt section 2.3 + champs d'arbitrage distincts
 SECTION_2_3_PROMPT = """Tu es analyste financier. On te donne des clusters d'actualités concernant
 des entreprises d'un portefeuille. Pour CHAQUE cluster, produis un objet JSON.
 
-Portefeuille de l'utilisateur (avec pondération) :
+Portefeuille de l'utilisateur (ticker, nom, secteur, pondération, sens long/short) :
 {portfolio_json}
 
 Clusters à analyser :
@@ -104,7 +104,10 @@ sans balises markdown. Schéma par élément :
   "confiance": float 0.0-1.0,
   "resume": string,
   "contagion": [string],
-  "justification_score": string
+  "justification_score": string,
+  "mecanisme": string | null,
+  "lecture_position": string | null,
+  "reserve": string | null
 }}
 
 Règles impératives :
@@ -113,7 +116,23 @@ Règles impératives :
 - "impact_score" mesure l'effet attendu sur la valorisation, PAS l'intérêt
   journalistique. Un article "5 raisons d'acheter X" = type "bruit", score 0.
 - Ne jamais inventer de chiffre absent des sources.
-- Si tu ne peux pas déterminer un champ, mets null plutôt que de deviner."""
+- Si tu ne peux pas déterminer un champ, mets null plutôt que de deviner.
+- Raisonne selon position_side de la ligne (long vs short) : un choc baissier
+  est favorable à un short, défavorable à un long.
+- "mecanisme" : chaîne causale économique entre l'événement et CE titre.
+  Explique POURQUOI ça l'affecte. Ne jamais reprendre justification_score.
+- "lecture_position" : implication CONCRÈTE selon le poids ET le sens
+  (long/short). Pas un simple rappel du pourcentage.
+- "reserve" : ce que tu NE SAIS PAS ou ne peux pas quantifier. Une limite
+  réelle, jamais une reformulation du mécanisme.
+- Ces trois champs (mecanisme, lecture_position, reserve) doivent être
+  sémantiquement distincts. Si tu ne peux pas produire un mécanisme différent
+  de la justification du score, mets mecanisme à null.
+- Pour "contagion", évalue systématiquement si l'événement peut affecter
+  d'autres lignes du portefeuille par : même secteur, même zone géographique,
+  même chaîne de valeur, ou sensibilité aux mêmes variables macro (taux,
+  change, matières premières). Retourne un tableau de tickers du portefeuille
+  (hors ticker_principal). Tableau vide seulement si aucun lien plausible."""
 
 
 class ClusterAnalysis(BaseModel):
@@ -127,6 +146,9 @@ class ClusterAnalysis(BaseModel):
     resume: Optional[str] = None
     contagion: Optional[list[str]] = None
     justification_score: Optional[str] = None
+    mecanisme: Optional[str] = None
+    lecture_position: Optional[str] = None
+    reserve: Optional[str] = None
 
     @field_validator("contagion", mode="before")
     @classmethod
@@ -137,13 +159,25 @@ class ClusterAnalysis(BaseModel):
             return [str(v).strip().upper() for v in value if v]
         return None
 
+    @field_validator("mecanisme", "lecture_position", "reserve", mode="before")
+    @classmethod
+    def blank_arb_field(cls, value: Any) -> Optional[str]:
+        if value is None:
+            return None
+        text = str(value).strip()
+        if not text or text.lower() in {"null", "none", "n/a"}:
+            return None
+        return text
+
 
 class PortfolioRow(BaseModel):
     symbol: str
     name: str
     weight_pct: float
     position_side: str = "long"
-    alert_threshold: int = 60
+    alert_threshold: int = 70
+    sector: Optional[str] = None
+    max_alerts_per_day: int = 3
 
 
 class PendingEvent(BaseModel):
@@ -165,7 +199,9 @@ class LlmError(Exception):
 def load_portfolio(client: Client) -> dict[str, PortfolioRow]:
     rows = (
         client.table("portfolio")
-        .select("symbol, name, weight_pct, position_side, alert_threshold")
+        .select(
+            "symbol, name, weight_pct, position_side, alert_threshold, sector, max_alerts_per_day"
+        )
         .eq("is_active", True)
         .execute()
         .data
@@ -177,7 +213,9 @@ def load_portfolio(client: Client) -> dict[str, PortfolioRow]:
             name=r["name"],
             weight_pct=float(r["weight_pct"]),
             position_side=r.get("position_side") or "long",
-            alert_threshold=int(r.get("alert_threshold") or 60),
+            alert_threshold=int(r.get("alert_threshold") or 70),
+            sector=r.get("sector"),
+            max_alerts_per_day=int(r.get("max_alerts_per_day") or 3),
         )
         for r in rows
     }
@@ -207,6 +245,7 @@ def portfolio_to_json(portfolio: dict[str, PortfolioRow]) -> str:
             "name": p.name,
             "weight_pct": p.weight_pct,
             "position_side": p.position_side,
+            "sector": p.sector,
             "alert_threshold": p.alert_threshold,
         }
         for p in portfolio.values()
@@ -356,18 +395,31 @@ def map_type_evenement(value: Optional[str]) -> EventTypeKey:
     return TYPE_TO_KEY.get(value.lower().replace(" ", ""), "rumor")
 
 
-def pick_contagion(
+def pick_contagion_symbols(
     contagion: Optional[list[str]],
     portfolio: dict[str, PortfolioRow],
     exclude: str,
-) -> Optional[str]:
+) -> list[str]:
     if not contagion:
-        return None
+        return []
+    out: list[str] = []
+    exclude_u = exclude.upper()
     for ticker in contagion:
         t = ticker.strip().upper()
-        if t in portfolio and t != exclude.upper():
-            return t
-    return None
+        if t in portfolio and t != exclude_u and t not in out:
+            out.append(t)
+    return out
+
+
+def distinct_mecanisme(
+    mecanisme: Optional[str],
+    justification: Optional[str],
+) -> Optional[str]:
+    if not mecanisme:
+        return None
+    if justification and mecanisme.strip().lower() == justification.strip().lower():
+        return None
+    return mecanisme.strip()
 
 
 def degraded_row(event: PendingEvent, llm_model: str) -> dict[str, Any]:
@@ -388,6 +440,10 @@ def degraded_row(event: PendingEvent, llm_model: str) -> dict[str, Any]:
         "confidence_pct": 20,
         "horizon": "short_term",
         "contagion_symbol": None,
+        "contagion_symbols": [],
+        "mecanisme": None,
+        "lecture_position": None,
+        "reserve": None,
         "llm_processed": True,
         "llm_model": llm_model,
         "llm_processed_at": now,
@@ -420,6 +476,9 @@ def analysis_to_row(
         int(round(analysis.confiance * 100)) if analysis.confiance is not None else 20
     )
     now = datetime.now(timezone.utc).isoformat()
+    contagion_list = pick_contagion_symbols(
+        analysis.contagion, portfolio, event.symbol
+    )
 
     return {
         "event_type": TYPE_LABELS.get(type_key, type_key),
@@ -429,13 +488,17 @@ def analysis_to_row(
         "body": resume,
         "scoring_rationale": analysis.justification_score
         or "Justification non fournie par le modèle.",
+        "mecanisme": distinct_mecanisme(
+            analysis.mecanisme, analysis.justification_score
+        ),
+        "lecture_position": analysis.lecture_position,
+        "reserve": analysis.reserve,
         "impact_score": impact,
         "sentiment": analysis.sentiment if analysis.sentiment is not None else 0.0,
         "confidence_pct": confiance_pct,
         "horizon": horizon_db,
-        "contagion_symbol": pick_contagion(
-            analysis.contagion, portfolio, event.symbol
-        ),
+        "contagion_symbol": contagion_list[0] if contagion_list else None,
+        "contagion_symbols": contagion_list,
         "llm_processed": True,
         "llm_model": llm_model,
         "llm_processed_at": now,

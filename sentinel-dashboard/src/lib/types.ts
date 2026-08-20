@@ -14,11 +14,15 @@ export type SentinelEvent = {
   summary: string | null;
   body: string | null;
   scoring_rationale: string | null;
+  mecanisme: string | null;
+  lecture_position: string | null;
+  reserve: string | null;
   impact_score: number | null;
   sentiment: number | null;
   confidence_pct: number | null;
   horizon: string | null;
   contagion_symbol: string | null;
+  contagion_symbols: string[];
   sources: EventSource[];
   is_read: boolean;
   filter_passed: boolean;
@@ -39,6 +43,8 @@ export type PortfolioRow = {
   sentiment_spark: number[];
   alerts_per_week_est: number | null;
   position_side: string;
+  sector: string | null;
+  max_alerts_per_day: number;
   sort_order: number;
 };
 
@@ -69,7 +75,7 @@ export type BriefStats = {
 };
 
 export const EVENT_FEED_SELECT =
-  "id, symbol, event_type, event_type_key, title, summary, body, scoring_rationale, impact_score, sentiment, confidence_pct, horizon, contagion_symbol, sources, is_read, filter_passed, llm_processed, published_at, detected_at, created_at";
+  "id, symbol, event_type, event_type_key, title, summary, body, scoring_rationale, mecanisme, lecture_position, reserve, impact_score, sentiment, confidence_pct, horizon, contagion_symbol, contagion_symbols, sources, is_read, filter_passed, llm_processed, published_at, detected_at, created_at";
 
 /** Alerte affichable : filtrée ET enrichie par le LLM (titre + impact). */
 export function isFeedReady(event: Pick<SentinelEvent, "filter_passed" | "llm_processed" | "title" | "impact_score">): boolean {

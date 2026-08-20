@@ -20,6 +20,15 @@ function normalizeRow(row: Record<string, unknown>): SentinelEvent {
       : [],
     sentiment: row.sentiment != null ? Number(row.sentiment) : null,
     impact_score: row.impact_score != null ? Number(row.impact_score) : null,
+    mecanisme: typeof row.mecanisme === "string" ? row.mecanisme : null,
+    lecture_position:
+      typeof row.lecture_position === "string" ? row.lecture_position : null,
+    reserve: typeof row.reserve === "string" ? row.reserve : null,
+    contagion_symbols: Array.isArray(row.contagion_symbols)
+      ? (row.contagion_symbols as string[]).filter(Boolean)
+      : row.contagion_symbol
+        ? [String(row.contagion_symbol)]
+        : [],
   };
 }
 

@@ -1,5 +1,5 @@
 import type { PortfolioRow, SentinelEvent } from "./types";
-import { eventSummary, eventTitle } from "./utils";
+import { eventContagionSymbols, eventSummary, eventTitle } from "./utils";
 
 export type ArbActionClass = "buy" | "hold" | "trim" | "take";
 
@@ -37,16 +37,25 @@ function suggestAction(
   const impact = event.impact_score ?? 0;
   const short = line.position_side === "short";
 
+  if (short) {
+    if (impact < 40) {
+      return { action: "Maintenir le short", actionClass: "hold" };
+    }
+    if (sent <= -0.15) {
+      return { action: "Renforcer le short", actionClass: "buy" };
+    }
+    if (sent >= 0.35 && impact >= 70) {
+      return { action: "Déboucler", actionClass: "trim" };
+    }
+    if (sent >= 0.15) {
+      return { action: "Alléger le short", actionClass: "trim" };
+    }
+    return { action: "Maintenir le short", actionClass: "hold" };
+  }
+
   if (impact < 40) {
     return { action: "Maintien", actionClass: "hold" };
   }
-
-  if (short) {
-    if (sent <= -0.15) return { action: "Renforcement", actionClass: "buy" };
-    if (sent >= 0.15) return { action: "Allègement", actionClass: "trim" };
-    return { action: "Maintien", actionClass: "hold" };
-  }
-
   if (sent >= 0.25 && impact >= 55) {
     return { action: "Renforcement", actionClass: "buy" };
   }
@@ -61,26 +70,27 @@ function suggestAction(
 
 function buildChain(
   event: SentinelEvent,
-  line: PortfolioRow
+  _line: PortfolioRow
 ): [string, string][] {
-  const rationale = event.scoring_rationale || eventSummary(event);
-  const parts = rationale.split(/(?<=[.!?])\s+/).filter(Boolean);
-
-  return [
-    [
-      "Événement déclencheur",
-      eventTitle(event),
-    ],
-    [
-      "Mécanisme",
-      parts[0] || eventSummary(event) || "Signal détecté par le pipeline Sentinel.",
-    ],
-    [
-      "Lecture sur ta position",
-      parts.slice(1).join(" ") ||
-        `${line.symbol} (${line.weight_pct} % du portefeuille, ${line.position_side}) — impact ${event.impact_score ?? "?"}/100.`,
-    ],
+  const chain: [string, string][] = [
+    ["Événement déclencheur", eventTitle(event)],
   ];
+
+  if (event.mecanisme) {
+    chain.push(["Mécanisme", event.mecanisme]);
+  }
+  if (event.lecture_position) {
+    chain.push(["Lecture sur ta position", event.lecture_position]);
+  }
+  if (
+    !event.mecanisme &&
+    !event.lecture_position &&
+    event.scoring_rationale
+  ) {
+    chain.push(["Justification du score", event.scoring_rationale]);
+  }
+
+  return chain;
 }
 
 export function buildArbitrages(
@@ -99,12 +109,8 @@ export function buildArbitrages(
     const targets = new Set<string>();
 
     if (bySymbol.has(event.symbol)) targets.add(event.symbol);
-    if (
-      event.contagion_symbol &&
-      event.contagion_symbol !== "—" &&
-      bySymbol.has(event.contagion_symbol)
-    ) {
-      targets.add(event.contagion_symbol);
+    for (const sym of eventContagionSymbols(event)) {
+      if (bySymbol.has(sym)) targets.add(sym);
     }
 
     for (const sym of Array.from(targets)) {
@@ -125,7 +131,7 @@ export function buildArbitrages(
         teaser: eventSummary(event).slice(0, 160) || eventTitle(event),
         chain: buildChain(event, line),
         caveat:
-          event.scoring_rationale?.split(/(?<=[.!?])\s+/).slice(-1)[0] ||
+          event.reserve ||
           "Lecture indicative — vérifie les sources primaires avant d'agir.",
         sourceEvent: event,
       });
@@ -148,19 +154,13 @@ export function contagionForSymbol(
   const out = new Set<string>();
 
   for (const ev of events) {
-    if (
-      ev.symbol === symbol &&
-      ev.contagion_symbol &&
-      ev.contagion_symbol !== "—" &&
-      portfolioSymbols.has(ev.contagion_symbol)
-    ) {
-      out.add(ev.contagion_symbol);
+    const linked = eventContagionSymbols(ev);
+    if (ev.symbol === symbol) {
+      for (const other of linked) {
+        if (other !== symbol && portfolioSymbols.has(other)) out.add(other);
+      }
     }
-    if (
-      ev.contagion_symbol === symbol &&
-      ev.symbol !== symbol &&
-      portfolioSymbols.has(ev.symbol)
-    ) {
+    if (linked.includes(symbol) && ev.symbol !== symbol && portfolioSymbols.has(ev.symbol)) {
       out.add(ev.symbol);
     }
   }

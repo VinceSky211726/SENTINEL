@@ -12,6 +12,7 @@ import {
   formatSentiment,
   formatSourceTime,
   sentimentClass,
+  eventContagionSymbols,
 } from "@/lib/utils";
 
 export function AlertDetail({
@@ -110,10 +111,45 @@ export function AlertDetail({
         <Stat
           label="Contagion"
           term="cont"
-          value={event.contagion_symbol || "—"}
+          value={
+            eventContagionSymbols(event).join(", ") || "—"
+          }
           small
         />
       </div>
+
+      {event.mecanisme ? (
+        <div className="mb-3 rounded-xl border border-line bg-panel p-3">
+          <div className="mb-1.5 font-mono text-[8.5px] uppercase tracking-[0.14em] text-muted">
+            Mécanisme
+          </div>
+          <p className="text-[11.5px] leading-relaxed text-ice/85">
+            {event.mecanisme}
+          </p>
+        </div>
+      ) : null}
+
+      {event.lecture_position ? (
+        <div className="mb-3 rounded-xl border border-line bg-panel p-3">
+          <div className="mb-1.5 font-mono text-[8.5px] uppercase tracking-[0.14em] text-muted">
+            Lecture sur ta position
+          </div>
+          <p className="text-[11.5px] leading-relaxed text-ice/85">
+            {event.lecture_position}
+          </p>
+        </div>
+      ) : null}
+
+      {event.reserve ? (
+        <div className="mb-3 rounded-xl border border-line bg-panel p-3">
+          <div className="mb-1.5 font-mono text-[8.5px] uppercase tracking-[0.14em] text-muted">
+            Réserve
+          </div>
+          <p className="text-[11.5px] leading-relaxed text-ice/85">
+            {event.reserve}
+          </p>
+        </div>
+      ) : null}
 
       {event.scoring_rationale ? (
         <div className="mb-3 rounded-xl border border-line bg-panel p-3">
