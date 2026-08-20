@@ -4,3 +4,4 @@ python-dotenv
 pydantic
 datasketch
 httpx
+requests

@@ -103,23 +103,49 @@ def load_portfolio(client: Client) -> dict[str, PortfolioEntry]:
 
 def build_aliases(entry: PortfolioEntry) -> list[str]:
     aliases: set[str] = set()
-    for raw in (entry.symbol, entry.name, entry.news_query, entry.finnhub_symbol):
-        if not raw:
-            continue
-        aliases.add(raw.lower())
-        for token in re.findall(r"[\w&]+", raw.lower()):
-            if len(token) >= 2:
+
+    def add_phrase(raw: str) -> None:
+        phrase = raw.strip().lower()
+        if not phrase:
+            return
+        aliases.add(phrase)
+        for token in re.findall(r"[\w&]+", phrase):
+            if len(token) >= 4:
                 aliases.add(token)
-    if "santander" in entry.name.lower():
-        aliases.add("santander")
-    if "paribas" in entry.name.lower():
-        aliases.add("paribas")
-        aliases.add("bnp")
-    if "stellantis" in entry.name.lower():
+
+    if entry.news_query:
+        add_phrase(entry.news_query)
+    add_phrase(entry.name)
+    if entry.finnhub_symbol and len(entry.finnhub_symbol) >= 4:
+        add_phrase(entry.finnhub_symbol)
+
+    # Tickers courts (SAN, BNP…) matchent trop de bruit — ignorer si < 4 car.
+    if len(entry.symbol) >= 4:
+        aliases.add(entry.symbol.lower())
+
+    name_l = entry.name.lower()
+    query_l = (entry.news_query or "").lower()
+    if "santander" in name_l or "santander" in query_l:
+        aliases.update({"santander", "banco santander"})
+    if "paribas" in name_l:
+        aliases.update({"paribas", "bnp paribas"})
+        if len(entry.symbol) >= 3:
+            aliases.add(entry.symbol.lower())
+    if "stellantis" in name_l:
         aliases.add("stellantis")
-    if "s&p" in (entry.name.lower() + (entry.news_query or "").lower()):
+    if "s&p" in name_l + query_l:
         aliases.update({"s&p", "s&p 500", "sp500", "s&p500"})
     return sorted(aliases, key=len, reverse=True)
+
+
+def alias_in_text(alias: str, text: str) -> bool:
+    """Match avec limites de mot (évite « san » dans « santander »)."""
+    escaped = re.escape(alias)
+    if re.search(r"[\s&]", alias):
+        pattern = escaped
+    else:
+        pattern = rf"(?<![\w&]){escaped}(?![\w])"
+    return re.search(pattern, text, re.IGNORECASE) is not None
 
 
 def load_pending_events(client: Client) -> list[EventRow]:
@@ -205,7 +231,7 @@ def stage2_portfolio(
     if not text:
         return False, "texte vide — impossible de matcher une entité"
     aliases = aliases_by_symbol.get(event.symbol, [])
-    if any(alias in text for alias in aliases):
+    if any(alias_in_text(alias, text) for alias in aliases):
         return True, None
     return False, f"aucune entité portefeuille trouvée pour {event.symbol}"
 

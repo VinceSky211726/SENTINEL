@@ -19,15 +19,15 @@ load_dotenv()
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
 log = logging.getLogger(__name__)
 
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
-GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.1-8b-instant")
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3-flash-preview")
+GROQ_MODEL = os.getenv("GROQ_MODEL", "openai/gpt-oss-20b")
 GEMINI_URL = (
     "https://generativelanguage.googleapis.com/v1beta/models/"
     f"{GEMINI_MODEL}:generateContent"
 )
 GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
 HTTP_TIMEOUT = 90.0
-MAX_BATCH = int(os.getenv("LLM_MAX_ITEMS", "8"))
+MAX_BATCH = int(os.getenv("LLM_MAX_ITEMS", "3"))
 
 EventTypeKey = Literal[
     "reg", "guid", "prod", "jur", "res", "ma", "mgmt", "rating", "macro", "rumor"
@@ -226,7 +226,7 @@ def event_to_cluster(event: PendingEvent) -> dict[str, Any]:
         "cluster_id": event.id,
         "ticker": event.symbol,
         "titre": event.raw_title,
-        "corps": (event.raw_body or "")[:4000],
+        "corps": (event.raw_body or "")[:1500],
         "url": event.raw_url,
         "sources": event.sources,
         "published_at": event.published_at,
@@ -266,6 +266,14 @@ def extract_json_array(text: str) -> list[Any]:
     raise LlmError("Réponse LLM : tableau JSON attendu")
 
 
+def _http_llm_error(provider: str, resp: httpx.Response) -> LlmError:
+    detail = resp.text[:300]
+    return LlmError(
+        f"{provider} HTTP {resp.status_code}: {detail}",
+        status_code=resp.status_code,
+    )
+
+
 def call_gemini(api_key: str, prompt: str) -> str:
     payload = {
         "contents": [{"role": "user", "parts": [{"text": prompt}]}],
@@ -274,11 +282,16 @@ def call_gemini(api_key: str, prompt: str) -> str:
             "responseMimeType": "application/json",
         },
     }
+    headers = {"x-goog-api-key": api_key, "Content-Type": "application/json"}
     with httpx.Client(timeout=HTTP_TIMEOUT) as client:
-        resp = client.post(GEMINI_URL, params={"key": api_key}, json=payload)
-        if resp.status_code == 429:
-            raise LlmError("Gemini quota exceeded (429)", status_code=429)
-        resp.raise_for_status()
+        resp = client.post(
+            GEMINI_URL,
+            params={"key": api_key},
+            headers=headers,
+            json=payload,
+        )
+        if resp.status_code >= 400:
+            raise _http_llm_error("Gemini", resp)
         data = resp.json()
     try:
         return data["candidates"][0]["content"]["parts"][0]["text"]
@@ -301,9 +314,8 @@ def call_groq(api_key: str, prompt: str) -> str:
     headers = {"Authorization": f"Bearer {api_key}"}
     with httpx.Client(timeout=HTTP_TIMEOUT) as client:
         resp = client.post(GROQ_URL, headers=headers, json=payload)
-        if resp.status_code == 429:
-            raise LlmError("Groq quota exceeded (429)", status_code=429)
-        resp.raise_for_status()
+        if resp.status_code >= 400:
+            raise _http_llm_error("Groq", resp)
         data = resp.json()
     try:
         return data["choices"][0]["message"]["content"]
@@ -324,8 +336,8 @@ def analyze_batch(
         try:
             raw = call_gemini(gemini_key, prompt)
         except LlmError as exc:
-            if exc.status_code == 429 and groq_key:
-                log.warning("Gemini 429 — bascule Groq")
+            if groq_key:
+                log.warning("Gemini indisponible (%s) — bascule Groq", exc)
                 raw = call_groq(groq_key, prompt)
                 model = GROQ_MODEL
                 fallback = True

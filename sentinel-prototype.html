@@ -1,0 +1,1158 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sentinel — prototype</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --void:#080C18; --deep:#0D1225; --panel:#151C33; --panel2:#1C2440;
+  --line:#252E4D; --ice:#C6D6F5; --muted:#71809F; --white:#F2F5FC;
+  --signal:#E8542F; --up:#2BA36B; --down:#E8542F;
+  --sans:"IBM Plex Sans",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+body{
+  background:var(--void);color:var(--white);font-family:var(--sans);
+  -webkit-font-smoothing:antialiased;min-height:100vh;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  padding:32px 16px;gap:20px;
+}
+.hint{
+  font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;
+  color:var(--muted);text-align:center;line-height:1.9
+}
+.hint b{color:var(--signal);font-weight:500}
+
+/* ---------- device ---------- */
+.phone{
+  width:380px;height:min(780px,88vh);
+  background:var(--deep);border-radius:42px;border:1px solid var(--line);
+  box-shadow:0 0 0 10px #0B0F1C,0 40px 90px -25px rgba(0,0,0,.95);
+  overflow:hidden;position:relative;display:flex;flex-direction:column;flex-shrink:0
+}
+@media(max-width:440px){
+  body{padding:0;gap:0}
+  .phone{width:100vw;height:100vh;border-radius:0;border:none;box-shadow:none}
+  .notch{display:none}
+  .hint{display:none}
+}
+.notch{position:absolute;top:10px;left:50%;transform:translateX(-50%);
+  width:104px;height:26px;background:#0B0F1C;border-radius:14px;z-index:60}
+.status{display:flex;justify-content:space-between;align-items:flex-end;
+  padding:14px 24px 4px;font-family:var(--mono);font-size:11px;color:var(--ice);flex-shrink:0}
+.status .r{opacity:.7;font-size:10px}
+
+/* ---------- app shell ---------- */
+.app{flex:1;display:flex;flex-direction:column;min-height:0;position:relative}
+.appbar{padding:14px 20px 10px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
+.brand{display:flex;align-items:center;gap:9px}
+.diamond{width:11px;height:11px;background:var(--signal);transform:rotate(45deg);border-radius:2px}
+.brand span{font-family:var(--mono);font-size:13px;letter-spacing:.16em;font-weight:600}
+.iconbtn{width:30px;height:30px;border-radius:9px;background:var(--panel2);
+  display:grid;place-items:center;color:var(--ice);font-size:13px;cursor:pointer;
+  border:1px solid transparent;transition:.15s}
+.iconbtn:active{background:var(--line)}
+.bell{position:relative}
+.bell .dot{position:absolute;top:5px;right:5px;width:7px;height:7px;border-radius:50%;
+  background:var(--signal);display:none}
+.bell.has .dot{display:block}
+
+.view{flex:1;overflow-y:auto;overflow-x:hidden;padding:0 20px 12px;
+  scrollbar-width:none;-ms-overflow-style:none}
+.view::-webkit-scrollbar{display:none}
+.page{display:none;animation:fade .22s ease}
+.page.on{display:block}
+@keyframes fade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+
+/* ---------- compression banner ---------- */
+.compress{padding:13px 14px 12px;background:linear-gradient(160deg,var(--panel),var(--deep));
+  border:1px solid var(--line);border-radius:14px;margin-bottom:14px}
+.compress .top{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:11px}
+.lbl{font-family:var(--mono);font-size:9px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted)}
+.compress .ratio{font-family:var(--mono);font-size:12px;color:var(--ice);font-weight:500}
+.bars{display:flex;align-items:flex-end;gap:3px;height:34px}
+.bars .seg{border-radius:3px 3px 0 0;position:relative;transition:width .5s cubic-bezier(.4,0,.2,1)}
+.bars .seg span{position:absolute;top:-1px;left:0;width:100%;text-align:center;
+  font-family:var(--mono);font-size:8px;color:var(--deep);font-weight:600}
+.compress .foot{display:flex;justify-content:space-between;margin-top:8px;
+  font-family:var(--mono);font-size:9px;color:var(--muted)}
+
+/* ---------- chips ---------- */
+.chips{display:flex;gap:7px;margin-bottom:13px;overflow-x:auto;scrollbar-width:none;padding-bottom:2px}
+.chips::-webkit-scrollbar{display:none}
+.chip{font-size:11px;padding:6px 12px;border-radius:99px;border:1px solid var(--line);
+  color:var(--muted);white-space:nowrap;cursor:pointer;transition:.15s;flex-shrink:0}
+.chip.on{background:var(--ice);color:var(--deep);border-color:var(--ice);font-weight:600}
+
+/* ---------- cards ---------- */
+.card{background:var(--panel);border:1px solid var(--line);border-radius:15px;
+  padding:14px;margin-bottom:11px;display:flex;gap:12px;cursor:pointer;transition:.15s}
+.card:active{transform:scale(.985);border-color:var(--muted)}
+.card.crit{background:var(--panel2)}
+.card.unread{position:relative}
+.card.unread::after{content:"";position:absolute;top:13px;right:13px;
+  width:6px;height:6px;border-radius:50%;background:var(--signal)}
+.card.fresh{animation:pop .45s cubic-bezier(.2,.9,.3,1.3)}
+@keyframes pop{from{opacity:0;transform:translateY(-14px) scale(.96)}to{opacity:1;transform:none}}
+.score{flex-shrink:0;width:44px;text-align:center}
+.ring{width:44px;height:44px;border-radius:50%;display:grid;place-items:center;
+  font-family:var(--mono);font-size:16px;font-weight:600;color:var(--white)}
+.score small{display:block;margin-top:5px;font-family:var(--mono);font-size:8px;
+  letter-spacing:.1em;color:var(--muted)}
+.cbody{flex:1;min-width:0}
+.cbody h3{font-size:13.5px;font-weight:600;line-height:1.35;margin-bottom:6px;padding-right:10px}
+.meta{display:flex;flex-wrap:wrap;gap:6px;align-items:center;
+  font-family:var(--mono);font-size:9.5px;color:var(--muted);margin-bottom:7px}
+.tick{background:var(--line);color:var(--ice);padding:2px 6px;border-radius:4px;font-weight:600}
+.type{color:var(--signal);letter-spacing:.1em;text-transform:uppercase;font-size:9px}
+.cbody p{font-size:11.5px;line-height:1.5;color:var(--ice);opacity:.8}
+.srcrow{display:flex;align-items:center;gap:8px;margin-top:9px;
+  font-family:var(--mono);font-size:9.5px;color:var(--muted)}
+.dots{display:flex;gap:2.5px}
+.dots i{width:5px;height:5px;border-radius:50%;background:var(--ice);opacity:.5}
+.senti{margin-left:auto;font-weight:600}
+.senti.dn{color:var(--down)}.senti.up{color:var(--up)}
+
+.empty{text-align:center;padding:44px 20px;color:var(--muted)}
+.empty .big{font-size:26px;margin-bottom:12px;opacity:.5}
+.empty p{font-size:12.5px;line-height:1.6}
+.empty b{color:var(--ice);font-weight:500;display:block;margin-bottom:6px;font-size:13.5px}
+
+/* ---------- detail ---------- */
+.back{display:flex;align-items:center;gap:7px;font-size:12px;color:var(--muted);
+  margin-bottom:14px;cursor:pointer}
+.back:active{color:var(--ice)}
+.hero{background:var(--panel2);border:1px solid var(--line);border-radius:16px;padding:16px;margin-bottom:12px}
+.hero .row1{display:flex;align-items:center;gap:12px;margin-bottom:12px}
+.bigring{width:58px;height:58px;border-radius:50%;flex-shrink:0;display:grid;place-items:center;
+  font-family:var(--mono);font-size:21px;font-weight:600}
+.hero .ttl{font-size:15px;font-weight:600;margin-bottom:3px}
+.hero .sub{font-family:var(--mono);font-size:9.5px;color:var(--signal);letter-spacing:.12em;text-transform:uppercase}
+.hero p{font-size:12px;line-height:1.55;color:var(--ice);opacity:.85}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-bottom:12px}
+.stat{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:11px}
+.stat .k{font-family:var(--mono);font-size:8.5px;letter-spacing:.14em;text-transform:uppercase;
+  color:var(--muted);margin-bottom:5px}
+.stat .v{font-family:var(--mono);font-size:16px;font-weight:600}
+.stat .v.dn{color:var(--down)}.stat .v.up{color:var(--up)}
+.why{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:12px}
+.why .k{font-family:var(--mono);font-size:8.5px;letter-spacing:.14em;text-transform:uppercase;
+  color:var(--muted);margin-bottom:6px}
+.why p{font-size:11.5px;line-height:1.55;color:var(--ice);opacity:.85}
+.src{display:flex;align-items:center;gap:9px;padding:9px 11px;border:1px solid var(--line);
+  border-radius:10px;margin-bottom:7px;font-size:11.5px}
+.src .t{font-family:var(--mono);font-size:9px;color:var(--muted);flex-shrink:0}
+.src .auth{margin-left:auto;font-family:var(--mono);font-size:9px;color:var(--muted)}
+.actions{display:flex;gap:8px;margin:14px 0 4px}
+.btn{flex:1;text-align:center;padding:11px;border-radius:11px;font-size:12px;font-weight:600;
+  border:1px solid var(--line);color:var(--ice);cursor:pointer;transition:.15s}
+.btn:active{transform:scale(.97)}
+.btn.primary{background:var(--ice);color:var(--deep);border-color:var(--ice)}
+.btn.done{background:var(--up);border-color:var(--up);color:#04170D}
+.btn.dismissed{background:var(--line);color:var(--muted)}
+
+/* ---------- portfolio ---------- */
+.phead{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:14px}
+.phead h2{font-size:20px;font-weight:600;letter-spacing:-.01em}
+.addbtn{font-family:var(--mono);font-size:10px;color:var(--signal);letter-spacing:.08em;cursor:pointer}
+.line{background:var(--panel);border:1px solid var(--line);border-radius:13px;
+  padding:12px 13px;margin-bottom:9px;transition:.2s}
+.line.paused{opacity:.4}
+.line .r1{display:flex;align-items:center;gap:9px;margin-bottom:9px}
+.sym{font-family:var(--mono);font-size:11px;font-weight:600;background:var(--line);
+  color:var(--ice);padding:3px 7px;border-radius:5px}
+.nm{font-size:12.5px;font-weight:500}
+.wt{margin-left:auto;font-family:var(--mono);font-size:11px;color:var(--muted)}
+.toggle{width:34px;height:19px;border-radius:99px;background:var(--line);position:relative;
+  cursor:pointer;transition:.2s;flex-shrink:0}
+.toggle i{position:absolute;top:2px;left:2px;width:15px;height:15px;border-radius:50%;
+  background:var(--muted);transition:.2s}
+.toggle.on{background:var(--ice)}
+.toggle.on i{left:17px;background:var(--deep)}
+.r2{display:flex;align-items:center;gap:11px;margin-bottom:10px}
+.spark{display:flex;align-items:flex-end;gap:2px;height:20px;flex:1}
+.spark i{flex:1;border-radius:1.5px;background:var(--ice);opacity:.4}
+.sv{font-family:var(--mono);font-size:11px;font-weight:600;width:46px;text-align:right}
+.thr{display:flex;align-items:center;gap:9px}
+.thr .k{font-family:var(--mono);font-size:9px;color:var(--muted);width:74px;flex-shrink:0;display:flex;align-items:center}
+.thr .k .info-i{width:13px;height:13px;font-size:8px}
+.thr .est{font-family:var(--mono);font-size:9px;color:var(--ice);width:52px;text-align:right;flex-shrink:0}
+input[type=range]{flex:1;-webkit-appearance:none;appearance:none;height:3px;border-radius:2px;
+  background:var(--line);outline:none;cursor:pointer}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;height:14px;
+  border-radius:50%;background:var(--white);cursor:pointer;border:none}
+input[type=range]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;
+  background:var(--white);cursor:pointer;border:none}
+
+/* ---------- brief ---------- */
+.digest{background:linear-gradient(150deg,var(--panel2),var(--panel));border:1px solid var(--line);
+  border-radius:15px;padding:15px;margin-bottom:12px}
+.digest h2{font-size:17px;font-weight:600;margin-bottom:3px}
+.digest .date{font-family:var(--mono);font-size:9.5px;color:var(--muted);
+  letter-spacing:.1em;text-transform:uppercase;margin-bottom:14px}
+.gauge{display:flex;align-items:baseline;gap:10px;margin-bottom:10px}
+.gauge .n{font-family:var(--mono);font-size:32px;font-weight:600;color:var(--down)}
+.gauge .d{font-size:11px;color:var(--muted);line-height:1.4}
+.trend{display:flex;align-items:flex-end;gap:2px;height:26px;margin-bottom:4px}
+.trend i{flex:1;border-radius:1.5px;background:var(--ice);opacity:.35}
+.sec{margin-bottom:12px}
+.sec .k{font-family:var(--mono);font-size:9px;letter-spacing:.14em;text-transform:uppercase;
+  color:var(--muted);margin-bottom:9px}
+.watch{display:flex;gap:10px;padding:11px;background:var(--panel);border:1px solid var(--line);
+  border-radius:12px;margin-bottom:8px}
+.watch .num{font-family:var(--mono);font-size:12px;color:var(--signal);flex-shrink:0}
+.watch p{font-size:11.5px;line-height:1.5;color:var(--ice);opacity:.88}
+.calm{display:flex;flex-wrap:wrap;gap:6px}
+.calm span{font-family:var(--mono);font-size:10px;padding:4px 9px;border-radius:6px;
+  background:var(--panel);border:1px solid var(--line);color:var(--muted)}
+
+/* ---------- settings ---------- */
+.grp{margin-bottom:16px}
+.grp .k{font-family:var(--mono);font-size:9px;letter-spacing:.14em;text-transform:uppercase;
+  color:var(--muted);margin-bottom:9px}
+.row{display:flex;align-items:center;gap:11px;padding:12px 13px;background:var(--panel);
+  border:1px solid var(--line);border-radius:12px;margin-bottom:7px}
+.row .txt{flex:1;min-width:0}
+.row .txt b{display:block;font-size:12.5px;font-weight:500;margin-bottom:2px}
+.row .txt span{font-size:10.5px;color:var(--muted);line-height:1.45}
+.row .val{font-family:var(--mono);font-size:11px;color:var(--ice);flex-shrink:0}
+.zero{color:var(--up);font-weight:600}
+.warn{color:var(--signal)}
+
+/* ---------- tabbar ---------- */
+.tabbar{display:flex;justify-content:space-around;padding:10px 0 22px;
+  border-top:1px solid var(--line);background:var(--deep);flex-shrink:0}
+.tab{display:flex;flex-direction:column;align-items:center;gap:4px;color:var(--muted);
+  font-size:9.5px;cursor:pointer;transition:.15s;padding:2px 14px;position:relative}
+.tab.on{color:var(--white)}
+.tab .ic{font-size:15px;line-height:1}
+.tab.on .ic{color:var(--signal)}
+.tab .badge{position:absolute;top:-2px;right:8px;min-width:15px;height:15px;border-radius:99px;
+  background:var(--signal);color:#fff;font-family:var(--mono);font-size:9px;font-weight:600;
+  display:none;place-items:center;padding:0 4px}
+.tab .badge.on{display:grid}
+
+/* ---------- toast ---------- */
+.toast{position:absolute;left:20px;right:20px;bottom:86px;background:var(--ice);color:var(--deep);
+  padding:11px 14px;border-radius:12px;font-size:12px;font-weight:500;z-index:50;
+  opacity:0;transform:translateY(12px);pointer-events:none;transition:.25s;
+  display:flex;align-items:center;gap:9px}
+.toast.show{opacity:1;transform:none}
+.toast .dm{width:8px;height:8px;background:var(--signal);transform:rotate(45deg);border-radius:1px;flex-shrink:0}
+
+/* ---------- lamp tutorial ---------- */
+.iconbtn.lamp{position:relative}
+.overlay{position:absolute;inset:0;background:rgba(5,7,15,.72);backdrop-filter:blur(2px);
+  z-index:80;opacity:0;pointer-events:none;transition:opacity .2s}
+.overlay.show{opacity:1;pointer-events:auto}
+.sheet{position:absolute;left:0;right:0;bottom:0;max-height:86%;background:var(--deep);
+  border:1px solid var(--line);border-radius:22px 22px 0 0;
+  display:flex;flex-direction:column;transform:translateY(100%);transition:transform .28s cubic-bezier(.2,.85,.3,1)}
+.overlay.show .sheet{transform:translateY(0)}
+.sheet .grab{width:36px;height:4px;background:var(--line);border-radius:99px;margin:10px auto 4px;flex-shrink:0}
+.sheet .shead{display:flex;align-items:center;justify-content:space-between;padding:10px 20px 12px;flex-shrink:0}
+.sheet .shead h2{font-size:17px;font-weight:600}
+.sheet .shead .x{width:28px;height:28px;border-radius:9px;background:var(--panel2);
+  display:grid;place-items:center;color:var(--muted);cursor:pointer;font-size:13px}
+.sbody{overflow-y:auto;padding:0 20px 26px;scrollbar-width:none}
+.sbody::-webkit-scrollbar{display:none}
+.term{background:var(--panel);border:1px solid var(--line);border-radius:14px;
+  padding:14px;margin-bottom:11px;scroll-margin-top:8px;transition:border-color .3s,background .3s}
+.term.hit{border-color:var(--ice);background:var(--panel2)}
+.term .th{display:flex;align-items:center;gap:10px;margin-bottom:8px}
+.term .swatch{width:30px;height:30px;border-radius:9px;flex-shrink:0;display:grid;place-items:center;
+  font-family:var(--mono);font-size:12px;font-weight:600;color:var(--white)}
+.term h3{font-size:13.5px;font-weight:600}
+.term .ex{font-family:var(--mono);font-size:9.5px;color:var(--muted)}
+.term p{font-size:11.5px;line-height:1.6;color:var(--ice);opacity:.88;margin-bottom:8px}
+.term .scale{display:flex;align-items:center;gap:8px;margin-top:2px}
+.term .scale .track{flex:1;height:5px;border-radius:99px;position:relative}
+.term .scale span{font-family:var(--mono);font-size:9px;color:var(--muted)}
+.info-i{display:inline-grid;place-items:center;width:15px;height:15px;border-radius:50%;
+  background:var(--panel2);border:1px solid var(--line);color:var(--muted);
+  font-family:var(--mono);font-size:9px;cursor:pointer;flex-shrink:0;margin-left:5px}
+
+.iconbtn.spin{animation:spin .7s linear}
+@keyframes spin{from{transform:rotate(0)}to{transform:rotate(360deg)}}
+
+/* ---------- ligne portefeuille : contagion ---------- */
+.contag{display:flex;align-items:center;gap:5px;font-family:var(--mono);
+  font-size:9px;color:var(--muted);margin-top:7px;padding-top:7px;border-top:1px solid var(--line)}
+.contag .ic{color:#7A5A2C;flex-shrink:0}
+.contag b{color:var(--ice);font-weight:600}
+.contag.none{opacity:.45}
+
+/* ---------- modal ajout ligne ---------- */
+.addsheet input, .addsheet select{
+  width:100%;background:var(--panel);border:1px solid var(--line);border-radius:10px;
+  padding:11px 12px;color:var(--white);font-family:var(--sans);font-size:13px;outline:none}
+.addsheet input:focus, .addsheet select:focus{border-color:var(--ice)}
+.addsheet label{font-family:var(--mono);font-size:8.5px;letter-spacing:.12em;text-transform:uppercase;
+  color:var(--muted);margin-bottom:6px;display:block}
+.addsheet .field{margin-bottom:13px}
+.addsheet .row2{display:flex;gap:8px}
+.addsheet .row2 .field{flex:1}
+.addsheet .submit{width:100%;padding:13px;border-radius:12px;background:var(--ice);color:var(--deep);
+  font-weight:600;font-size:13px;text-align:center;cursor:pointer;margin-top:4px}
+.addsheet .submit:active{transform:scale(.98)}
+.addsheet .err{color:var(--signal);font-size:10.5px;margin:-6px 0 10px;display:none}
+.addsheet .err.show{display:block}
+
+/* ---------- moteur d'arbitrage ---------- */
+.arbhead{display:flex;align-items:center;gap:8px;margin-bottom:10px}
+.arbhead .k{font-family:var(--mono);font-size:9px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
+.arbhead .count{font-family:var(--mono);font-size:9px;color:var(--signal)}
+.arb{background:var(--panel);border:1px solid var(--line);border-radius:14px;
+  padding:13px;margin-bottom:10px;cursor:pointer;transition:.15s}
+.arb:active{transform:scale(.99)}
+.arb.strong{background:var(--panel2)}
+.arb .top{display:flex;align-items:center;gap:8px;margin-bottom:10px}
+.act{font-family:var(--mono);font-size:9.5px;font-weight:600;letter-spacing:.08em;
+  text-transform:uppercase;padding:4px 9px;border-radius:6px;white-space:nowrap}
+.act.buy{background:rgba(43,163,107,.16);color:var(--up);border:1px solid rgba(43,163,107,.4)}
+.act.hold{background:var(--line);color:var(--ice);border:1px solid var(--line)}
+.act.trim{background:rgba(232,84,47,.14);color:var(--signal);border:1px solid rgba(232,84,47,.4)}
+.act.take{background:rgba(200,160,60,.14);color:#D9AE4E;border:1px solid rgba(200,160,60,.4)}
+.arb .conf{margin-left:auto;font-family:var(--mono);font-size:9px;color:var(--muted);
+  display:flex;align-items:center;gap:5px}
+.confdots{display:flex;gap:2px}
+.confdots i{width:4px;height:9px;border-radius:1px;background:var(--line)}
+.confdots i.f{background:var(--ice)}
+
+/* chaîne de raisonnement */
+.chain{margin-bottom:11px}
+.link{display:flex;gap:9px;padding-bottom:9px;position:relative}
+.link:last-child{padding-bottom:0}
+.link .node{width:7px;flex-shrink:0;display:flex;flex-direction:column;align-items:center;padding-top:4px}
+.link .node b{width:6px;height:6px;border-radius:50%;background:var(--muted);flex-shrink:0}
+.link .node em{flex:1;width:1px;background:var(--line);margin-top:3px}
+.link:last-child .node em{display:none}
+.link.end .node b{background:var(--signal)}
+.link .txt{flex:1;min-width:0}
+.link .txt .kk{font-family:var(--mono);font-size:8px;letter-spacing:.14em;text-transform:uppercase;
+  color:var(--muted);margin-bottom:3px}
+.link .txt p{font-size:11.5px;line-height:1.5;color:var(--ice);opacity:.88}
+
+/* consensus */
+.cons{border-top:1px solid var(--line);padding-top:10px}
+.cons .cr{display:flex;align-items:center;gap:9px;margin-bottom:7px}
+.cons .kk{font-family:var(--mono);font-size:8px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
+.cons .demo{margin-left:auto;font-family:var(--mono);font-size:8px;color:var(--muted);opacity:.6}
+.cbar{display:flex;height:5px;border-radius:99px;overflow:hidden;margin-bottom:7px}
+.cbar i{height:100%}
+.cbar .b{background:var(--up)}.cbar .h{background:#4A63A8}.cbar .s{background:var(--signal)}
+.cleg{display:flex;gap:11px;font-family:var(--mono);font-size:9px;color:var(--muted);margin-bottom:8px}
+.cleg span{display:flex;align-items:center;gap:4px}
+.cleg u{width:6px;height:6px;border-radius:2px;text-decoration:none}
+.target{display:flex;justify-content:space-between;align-items:baseline;
+  font-family:var(--mono);font-size:10.5px}
+.target .up{color:var(--up)}.target .dn{color:var(--signal)}
+
+/* replié / déplié */
+.arb .top{margin-bottom:0}
+.arb.open .top{margin-bottom:10px}
+.chev{margin-left:8px;color:var(--muted);font-size:10px;flex-shrink:0;
+  transition:transform .25s;display:inline-block}
+.arb.open .chev{transform:rotate(180deg)}
+.teaser{font-size:11px;line-height:1.45;color:var(--muted);margin-top:8px;
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.arb.open .teaser{display:none}
+.arbdet{max-height:0;overflow:hidden;transition:max-height .35s cubic-bezier(.4,0,.2,1),opacity .25s;opacity:0}
+.arb.open .arbdet{max-height:900px;opacity:1}
+.srclink{display:inline-flex;align-items:center;gap:6px;margin-top:11px;
+  font-family:var(--mono);font-size:9.5px;color:var(--ice);opacity:.75;cursor:pointer}
+.srclink:active{opacity:1}
+.minicons{display:flex;align-items:center;gap:6px;margin-top:8px;
+  font-family:var(--mono);font-size:9px;color:var(--muted)}
+.minibar{display:flex;height:3px;width:46px;border-radius:99px;overflow:hidden;flex-shrink:0}
+.minibar i{height:100%}
+.arb.open .minicons{display:none}
+</style>
+</head>
+<body>
+
+<div class="phone">
+  <div class="notch"></div>
+  <div class="status"><span id="clock">9:41</span><span class="r">▲ ▮▮▮ 84%</span></div>
+
+  <div class="app">
+    <div class="appbar">
+      <div class="brand"><div class="diamond"></div><span id="barTitle">SENTINEL</span></div>
+      <div style="display:flex;gap:8px">
+        <div class="iconbtn lamp" id="lampBtn" title="Comprendre les données">💡</div>
+        <div class="iconbtn" id="refreshBtn" title="Rafraîchir le fil">⟳</div>
+        <div class="iconbtn bell" id="bell" title="Simuler une alerte entrante">◔<span class="dot"></span></div>
+      </div>
+    </div>
+
+    <div class="view" id="view">
+
+      <!-- ============ FIL ============ -->
+      <div class="page on" id="p-feed">
+        <div class="compress">
+          <div class="top">
+            <span class="lbl">Filtrage du jour</span>
+            <span class="ratio" id="ratio">487 → 3 · 162:1</span>
+          </div>
+          <div class="bars">
+            <div class="seg" style="width:46%;height:34px;background:#F2F5FC"><span>487</span></div>
+            <div class="seg" style="width:22%;height:24px;background:#C6D6F5"><span>90</span></div>
+            <div class="seg" style="width:14%;height:17px;background:#7E9AD8"><span>28</span></div>
+            <div class="seg" style="width:10%;height:12px;background:#4A63A8"><span style="color:#F2F5FC">14</span></div>
+            <div class="seg" id="segOut" style="width:8%;height:8px;background:#E8542F"></div>
+          </div>
+          <div class="foot"><span>flux brut</span><span id="costFoot">alertes · 0,00 €</span></div>
+        </div>
+
+        <div class="chips" id="chips">
+          <div class="chip on" data-f="all">Tout</div>
+          <div class="chip" data-f="high">Impact &gt; 60</div>
+          <div class="chip" data-f="unread">Non lu</div>
+          <div class="chip" data-f="reg">Réglementaire</div>
+          <div class="chip" data-f="guid">Guidance</div>
+        </div>
+
+        <div id="feedList"></div>
+      </div>
+
+      <!-- ============ DÉTAIL ============ -->
+      <div class="page" id="p-detail"></div>
+
+      <!-- ============ PORTEFEUILLE ============ -->
+      <div class="page" id="p-pf">
+        <div class="phead">
+          <h2>Portefeuille</h2>
+          <span class="addbtn" id="addBtn">+ AJOUTER</span>
+        </div>
+
+        <div class="arbhead">
+          <span class="k">Arbitrages suggérés</span>
+          <span class="count" id="arbCount"></span>
+          <span class="info-i" data-term="arb" style="margin-left:auto">i</span>
+        </div>
+        <div id="arbList"></div>
+
+        <div class="arbhead" style="margin-top:18px"><span class="k">Lignes suivies</span></div>
+        <div id="pfList"></div>
+      </div>
+
+      <!-- ============ BRIEF ============ -->
+      <div class="page" id="p-brief">
+        <div class="digest">
+          <h2>Brief du matin</h2>
+          <div class="date">Mercredi 19 août · 08:00</div>
+          <div class="gauge">
+            <span class="n" id="briefSenti">−0,08</span>
+            <span class="d">sentiment global<br>du portefeuille</span>
+          </div>
+          <div class="trend">
+            <i style="height:35%"></i><i style="height:48%"></i><i style="height:60%"></i>
+            <i style="height:52%"></i><i style="height:44%"></i><i style="height:38%"></i>
+            <i style="height:30%"></i><i style="height:26%"></i><i style="height:34%"></i>
+            <i style="height:46%"></i><i style="height:40%"></i><i style="height:32%"></i>
+            <i style="height:28%"></i><i style="height:22%;background:#E8542F;opacity:1"></i>
+          </div>
+          <div class="lbl">14 derniers jours · −0,21 vs hier</div>
+        </div>
+
+        <div class="sec">
+          <div class="k">À surveiller aujourd'hui</div>
+          <div class="watch"><span class="num">01</span><p><b>TTE</b> — enquête de la Commission toujours en cours. Aucune communication officielle du groupe depuis l'annonce d'hier 14h32.</p></div>
+          <div class="watch"><span class="num">02</span><p><b>NVDA</b> — résultats du deuxième trimestre publiés ce soir après clôture US. Consensus large sur le marché.</p></div>
+        </div>
+
+        <div class="sec">
+          <div class="k">Rien à signaler</div>
+          <div class="calm"><span>ASML</span><span>MC</span><span>SAN</span><span>BN</span></div>
+        </div>
+
+        <div class="row">
+          <div class="txt"><b>Nuit écoulée</b><span>312 items filtrés · 2 alertes · 0,00 € consommés</span></div>
+        </div>
+      </div>
+
+      <!-- ============ RÉGLAGES ============ -->
+      <div class="page" id="p-set">
+        <div class="phead"><h2>Réglages</h2></div>
+
+        <div class="grp">
+          <div class="k">Notifications</div>
+          <div class="row">
+            <div class="txt"><b>Heures de silence</b><span id="quietTxt">22:00 → 07:00 · groupées dans le brief</span></div>
+            <div class="toggle on" data-t="quiet"><i></i></div>
+          </div>
+          <div class="row">
+            <div class="txt"><b>Alertes Telegram</b><span>Canal principal, latence &lt; 3 s</span></div>
+            <div class="toggle on" data-t="tg"><i></i></div>
+          </div>
+          <div class="row">
+            <div class="txt"><b>Détection de contagion</b><span>Signale les autres lignes exposées</span></div>
+            <div class="toggle on" data-t="cont"><i></i></div>
+          </div>
+        </div>
+
+        <div class="grp">
+          <div class="k">Sources</div>
+          <div class="row"><div class="txt"><b>SEC EDGAR</b><span>Dépôts 8-K, 13-D, Form 4</span></div><span class="val">5 min</span></div>
+          <div class="row"><div class="txt"><b>AMF · communiqués</b><span>Franchissements de seuils</span></div><span class="val">5 min</span></div>
+          <div class="row"><div class="txt"><b>Google News RSS</b><span>Agrégation par ticker</span></div><span class="val">10 min</span></div>
+          <div class="row"><div class="txt"><b>Yahoo Finance RSS</b><span class="warn">3 échecs consécutifs — mise en pause auto</span></div><span class="val warn">⚠</span></div>
+        </div>
+
+        <div class="grp">
+          <div class="k">Système</div>
+          <div class="row"><div class="txt"><b>Dernier cycle</b><span>487 items ingérés en 6,2 s</span></div><span class="val">il y a 4 min</span></div>
+          <div class="row"><div class="txt"><b>Quota IA du jour</b><span>Gemini Flash · bascule Groq si épuisé</span></div><span class="val">38 / 1500</span></div>
+          <div class="row"><div class="txt"><b>Coût du mois</b><span>Infrastructure et modèles inclus</span></div><span class="val zero">0,00 €</span></div>
+        </div>
+      </div>
+
+    </div>
+
+    <div class="toast" id="toast"><span class="dm"></span><span id="toastTxt"></span></div>
+
+    <div class="overlay" id="lampOverlay">
+      <div class="sheet">
+        <div class="grab"></div>
+        <div class="shead"><h2>Comment lire une alerte</h2><div class="x" id="lampClose">✕</div></div>
+        <div class="sbody" id="lampBody">
+
+          <div class="term" id="term-type">
+            <div class="th"><div class="swatch" style="background:#4A63A8">Aa</div><h3>Type d'événement</h3></div>
+            <p>La catégorie attribuée par l'agent IA à chaque cluster de news : résultats, guidance, M&amp;A, réglementaire, juridique, produit, direction, notation, macro ou rumeur. Les chips en haut du fil filtrent le fil par cette catégorie.</p>
+            <p style="opacity:.65"><b>Réglementaire</b> = action d'un régulateur (enquête, sanction, autorisation).<br><b>Guidance</b> = révision des prévisions financières communiquées par l'entreprise elle-même.</p>
+          </div>
+
+          <div class="term" id="term-impact">
+            <div class="th"><div class="swatch" style="background:var(--signal)">79</div><h3>Impact <span class="ex">0 → 100</span></h3></div>
+            <p>L'ampleur <b>attendue sur la valorisation</b> du titre — jamais l'intérêt médiatique. Un article "5 raisons d'acheter" fait du clic mais score proche de 0. Une divergence résultats/guidance sur une ligne volatile score haut même avec une seule source.</p>
+            <div class="scale"><span>0</span><div class="track" style="background:linear-gradient(90deg,var(--line),#7E9AD8,var(--signal))"></div><span>100</span></div>
+          </div>
+
+          <div class="term" id="term-senti">
+            <div class="th"><div class="swatch" style="background:#3A4568">±</div><h3>Sentiment <span class="ex">−1,0 → +1,0</span></h3></div>
+            <p>La tonalité de l'information elle-même, indépendante de l'impact. Une news peut être légèrement négative (−0,12) mais avoir un impact élevé, si le marché réagit fort à un signal mitigé.</p>
+            <p style="opacity:.65">Sentiment = <i>de quoi ça parle</i>. Impact = <i>à quel point ça va bouger le cours</i>.</p>
+          </div>
+
+          <div class="term" id="term-conf">
+            <div class="th"><div class="swatch" style="background:#2C5F5A">91%</div><h3>Confiance</h3></div>
+            <p>La confiance du système dans <b>sa propre analyse</b> — pas dans le titre. Dépend de l'autorité des sources et de leur nombre. Règle imposée à l'agent : une source unique de type blog ou forum plafonne la confiance à 40 %.</p>
+            <p style="opacity:.65">Confiance basse = « je te montre l'info, mais vérifie avant d'agir ».</p>
+          </div>
+
+          <div class="term" id="term-pos">
+            <div class="th"><div class="swatch" style="background:#5A4A8A">20%</div><h3>Ta position</h3></div>
+            <p>Le poids de la ligne dans <b>ton</b> portefeuille, tel que réglé dans l'onglet Portefeuille. Il contextualise l'impact : un même événement compte plus sur une ligne à 20 % que sur une ligne à 5 %.</p>
+          </div>
+
+          <div class="term" id="term-cont">
+            <div class="th"><div class="swatch" style="background:#7A5A2C">↝</div><h3>Contagion</h3></div>
+            <p>Détection d'un effet <b>indirect</b> sur une autre ligne de ton portefeuille que celle citée dans la news. Exemple : la guidance ASML relevée signale NVDA en contagion, car la demande en machines EUV est un indicateur avancé de la demande de puces — deux sociétés liées par la chaîne de valeur, sans lien capitalistique.</p>
+          </div>
+
+          <div class="term" id="term-arb">
+            <div class="th"><div class="swatch" style="background:#2C5F5A">⇄</div><h3>Arbitrage suggéré</h3></div>
+            <p>Une lecture de ce que l'événement implique pour ta position. Touche une carte pour dérouler la chaîne de raisonnement en trois temps : l'événement, le mécanisme économique, l'effet sur ta ligne. Si la chaîne ne te convainc pas, la suggestion ne vaut rien.</p>
+            <p style="opacity:.65"><b>Renforcement</b> · <b>Maintien</b> · <b>Prise de bénéfices</b> · <b>Allègement</b>. Chaque carte porte une réserve explicite : ce que le système ne sait pas.</p>
+            <p style="opacity:.65">La confiance en trois barres reflète la solidité du lien de causalité, pas la probabilité d'un gain.</p>
+          </div>
+
+          <div class="term" id="term-cons">
+            <div class="th"><div class="swatch" style="background:#4A63A8">◫</div><h3>Consensus analystes</h3></div>
+            <p>La répartition des recommandations des bureaux qui couvrent le titre, et leur objectif de cours moyen comparé au cours actuel. Il sert de <b>contrepoids</b> : si une suggestion du système va contre un consensus large, c'est un signal de prudence, pas une confirmation.</p>
+            <p style="opacity:.65">Dans ce prototype, ces chiffres sont simulés pour la démonstration. En production ils viendraient d'un flux type Finnhub.</p>
+          </div>
+
+          <div class="term" id="term-thr">
+            <div class="th"><div class="swatch" style="background:#5A6478">80</div><h3>Seuil d'alerte <span class="ex">onglet Portefeuille</span></h3></div>
+            <p>Le curseur qui fixe, ligne par ligne, à partir de quel <b>score d'impact</b> une notification t'est envoyée. « Seuil 80 » sur NVDA veut dire : seuls les événements NVDA notés 80 ou plus par l'agent IA déclenchent une alerte. En dessous, l'événement reste visible dans le fil mais sans notification.</p>
+            <p style="opacity:.65">L'estimation à droite du curseur (« ≈2/sem ») n'est pas un réglage — c'est une <b>projection</b> calculée à partir de la fréquence historique des scores sur cette ligne. Un seuil bas laisse passer plus d'événements, donc plus d'alertes par semaine ; un seuil haut ne laisse passer que les signaux les plus forts.</p>
+            <p style="opacity:.65">C'est le levier principal pour équilibrer une ligne selon ton attention : seuil bas sur une position volatile que tu surveilles de près, seuil haut sur une ligne de fond que tu ne veux voir remonter qu'en cas de choc majeur.</p>
+          </div>
+
+        </div>
+      </div>
+    </div>
+
+    <div class="overlay" id="addOverlay">
+      <div class="sheet addsheet">
+        <div class="grab"></div>
+        <div class="shead"><h2>Ajouter une ligne</h2><div class="x" id="addClose">✕</div></div>
+        <div class="sbody">
+
+          <div class="field">
+            <label>Ticker</label>
+            <input type="text" id="addSym" placeholder="ex : MC, AAPL, AI.PA" maxlength="8" autocapitalize="characters">
+          </div>
+          <div class="field">
+            <label>Nom de la société</label>
+            <input type="text" id="addName" placeholder="ex : LVMH">
+          </div>
+          <div class="row2">
+            <div class="field">
+              <label>Poids dans le portefeuille</label>
+              <input type="number" id="addWt" placeholder="%" min="0" max="100" step="0.5">
+            </div>
+            <div class="field">
+              <label>Seuil d'alerte initial</label>
+              <input type="number" id="addThr" placeholder="20–95" min="20" max="95" value="65">
+            </div>
+          </div>
+          <div class="err" id="addErr"></div>
+          <div class="submit" id="addSubmit">Ajouter au portefeuille</div>
+          <p style="font-size:10px;color:var(--muted);text-align:center;margin-top:10px;line-height:1.5">
+            La ligne apparaît sans historique — sentiment et arbitrages se construisent au fil des événements captés.
+          </p>
+
+        </div>
+      </div>
+    </div>
+
+    <div class="tabbar" id="tabs">
+      <div class="tab on" data-p="feed"><span class="ic">◆</span>Fil<span class="badge" id="feedBadge">1</span></div>
+      <div class="tab" data-p="pf"><span class="ic">▦</span>Portefeuille</div>
+      <div class="tab" data-p="brief"><span class="ic">◷</span>Brief</div>
+      <div class="tab" data-p="set"><span class="ic">⚙</span>Réglages</div>
+    </div>
+  </div>
+</div>
+
+<div class="hint">
+  Prototype interactif · <b>touche les onglets, les cartes et les curseurs</b><br>
+  L'icône ◔ en haut à droite simule l'arrivée d'une alerte
+</div>
+
+<script>
+/* ---------------- données ---------------- */
+const PF = [
+  {sym:"ASML", nm:"ASML Holding",  wt:25, thr:70, senti:+0.31, on:true,  spark:[20,34,45,62,85,72,78]},
+  {sym:"TTE",  nm:"TotalEnergies", wt:20, thr:55, senti:-0.42, on:true,  spark:[30,48,70,55,38,22,14]},
+  {sym:"MC",   nm:"LVMH",          wt:18, thr:65, senti:+0.08, on:true,  spark:[42,50,58,52,46,52,56]},
+  {sym:"NVDA", nm:"NVIDIA",        wt:15, thr:80, senti:+0.55, on:true,  spark:[52,70,80,66,84,58,68]},
+  {sym:"SAN",  nm:"Sanofi",        wt:12, thr:50, senti:-0.05, on:true,  spark:[38,40,34,38,44,40,39]},
+  {sym:"BN",   nm:"Danone",        wt:10, thr:40, senti:+0.02, on:false, spark:[28,34,30,26,31,29,33]}
+];
+
+let EV = [
+  {id:1, sym:"TTE", type:"Réglementaire", key:"reg", score:87, ago:"12 min", unread:true,
+   ttl:"Enquête de la Commission européenne sur les contrats gaziers",
+   sum:"Montant de l'amende potentielle non chiffré. Aucune réaction officielle du groupe à ce stade.",
+   full:"Ouverture d'une enquête de la Commission européenne sur les contrats d'approvisionnement gazier long terme. Le montant de l'amende potentielle n'est pas chiffré à ce stade.",
+   why:"Enquête réglementaire sur une activité représentant une part significative du chiffre d'affaires, confirmée par 4 sources indépendantes en moins de 30 minutes.",
+   senti:-0.71, conf:91, horizon:"immédiat", contagion:"ENGIE",
+   srcs:[["14:32","Reuters","primaire"],["14:38","Bloomberg","0,95"],["14:51","Les Échos","0,90"],["15:04","AFP","0,92"]]},
+
+  {id:2, sym:"ASML", type:"Guidance", key:"guid", score:64, ago:"2 h", unread:true,
+   ttl:"Guidance annuelle relevée, portée par la demande EUV",
+   sum:"Objectif de marge brute revu à la hausse. Contagion signalée sur NVDA.",
+   full:"Relèvement de la guidance annuelle porté par la demande en machines EUV. L'objectif de marge brute est revu à la hausse pour l'exercice en cours.",
+   why:"Révision de guidance à la hausse sur le principal moteur de croissance, relayée par 6 sources dont deux primaires, avec effet d'entraînement sur une autre ligne du portefeuille.",
+   senti:+0.62, conf:84, horizon:"court terme", contagion:"NVDA",
+   srcs:[["07:01","Communiqué IR","primaire"],["07:14","Reuters","0,95"],["07:30","Bloomberg","0,95"]]},
+
+  {id:3, sym:"MC", type:"Produit", key:"prod", score:41, ago:"5 h", unread:false,
+   ttl:"Nouvelle ligne haute joaillerie sur le marché asiatique",
+   sum:"Sous ton seuil d'alerte — visible ici seulement.",
+   full:"Lancement d'une ligne de haute joaillerie destinée au marché asiatique, annoncée lors d'un événement à Shanghai.",
+   why:"Annonce produit sans effet chiffré communiqué, relayée par deux sources secondaires. Horizon structurel plutôt qu'immédiat.",
+   senti:+0.22, conf:66, horizon:"structurel", contagion:"—",
+   srcs:[["04:20","Les Échos","0,90"],["06:02","Fashion Network","0,55"]]},
+
+  {id:4, sym:"SAN", type:"Juridique", key:"jur", score:33, ago:"9 h", unread:false,
+   ttl:"Recours collectif classé sans suite aux États-Unis",
+   sum:"Issue favorable, provision non utilisée. Impact limité.",
+   full:"Un recours collectif engagé aux États-Unis a été classé sans suite. La provision constituée n'a pas été utilisée.",
+   why:"Issue favorable mais anticipée par le marché, information publique depuis plus de 48 heures au moment de la détection.",
+   senti:+0.18, conf:78, horizon:"court terme", contagion:"—",
+   srcs:[["Hier","Reuters","0,95"],["Hier","Investir","0,80"]]}
+];
+
+const INCOMING = {id:99, sym:"NVDA", type:"Résultats", key:"res", score:79, ago:"à l'instant", unread:true, fresh:true,
+  ttl:"Résultats T2 au-dessus du consensus, guidance T3 prudente",
+  sum:"Chiffre d'affaires supérieur aux attentes, mais prévisions du trimestre suivant en retrait.",
+  full:"Publication des résultats du deuxième trimestre au-dessus du consensus sur le chiffre d'affaires. La guidance du trimestre suivant ressort en retrait par rapport aux attentes du marché.",
+  why:"Publication de résultats sur la ligne la plus volatile du portefeuille, avec un signal contradictoire entre le trimestre écoulé et les prévisions — configuration historiquement associée à de forts mouvements.",
+  senti:-0.12, conf:88, horizon:"immédiat", contagion:"ASML",
+  srcs:[["à l'instant","Communiqué IR","primaire"],["à l'instant","Reuters","0,95"]]};
+
+/* ---------------- état ---------------- */
+let filter = "all";
+let current = null;
+let fired = false;
+const feedback = {};
+
+/* ---------------- helpers ---------------- */
+const $ = s => document.querySelector(s);
+const $$ = s => [...document.querySelectorAll(s)];
+const ringColor = s => s >= 75 ? "var(--signal)" : s >= 55 ? "#7E9AD8" : "var(--line)";
+const fmt = n => (n > 0 ? "+" : "−") + Math.abs(n).toFixed(2).replace(".", ",");
+const alertsPerWeek = t => Math.max(0, Math.round((100 - t) / 11));
+
+function toast(msg){
+  $("#toastTxt").textContent = msg;
+  $("#toast").classList.add("show");
+  clearTimeout(window._tt);
+  window._tt = setTimeout(() => $("#toast").classList.remove("show"), 2100);
+}
+
+/* ---------------- rendu du fil ---------------- */
+function visibleEvents(){
+  const thr = {};
+  PF.forEach(p => thr[p.sym] = p.on ? p.thr : 999);
+  return EV.filter(e => {
+    if (filter === "high"   && e.score <= 60) return false;
+    if (filter === "unread" && !e.unread)     return false;
+    if (filter === "reg"    && e.key !== "reg")  return false;
+    if (filter === "guid"   && e.key !== "guid") return false;
+    return true;
+  });
+}
+
+function renderFeed(){
+  const list = visibleEvents();
+  const el = $("#feedList");
+
+  // compteur d'alertes = événements au-dessus du seuil de leur ligne
+  const above = EV.filter(e => {
+    const p = PF.find(x => x.sym === e.sym);
+    return p && p.on && e.score >= p.thr;
+  }).length;
+  $("#ratio").textContent = `487 → ${above} · ${Math.round(487 / Math.max(above,1))}:1`;
+  $("#segOut").style.width = Math.max(4, above * 2.6) + "%";
+
+  const unread = EV.filter(e => e.unread).length;
+  const badge = $("#feedBadge");
+  badge.textContent = unread;
+  badge.classList.toggle("on", unread > 0);
+
+  if (!list.length){
+    el.innerHTML = `<div class="empty"><div class="big">◆</div>
+      <b>Rien ne passe ce filtre</b>
+      <p>C'est le comportement attendu : le fil ne se remplit que si un événement dépasse le seuil que tu as fixé.</p></div>`;
+    return;
+  }
+
+  el.innerHTML = list.map(e => {
+    const p = PF.find(x => x.sym === e.sym);
+    const crit = e.score >= 75 ? " crit" : "";
+    const un = e.unread ? " unread" : "";
+    const fr = e.fresh ? " fresh" : "";
+    const below = p && e.score < p.thr
+      ? `<p style="color:var(--muted);opacity:.7;margin-top:6px;font-size:10.5px">Sous ton seuil ${p.thr} — pas de notification envoyée.</p>` : "";
+    return `<div class="card${crit}${un}${fr}" data-id="${e.id}">
+      <div class="score">
+        <div class="ring" style="border:2.5px solid ${ringColor(e.score)}">${e.score}</div>
+        <small>IMPACT</small>
+      </div>
+      <div class="cbody">
+        <div class="meta"><span class="tick">${e.sym}</span><span class="type">${e.type}</span><span>· ${e.ago}</span></div>
+        <h3>${e.ttl}</h3>
+        <p>${e.sum}</p>${below}
+        <div class="srcrow">
+          <span class="dots">${e.srcs.map(()=>"<i></i>").join("")}</span>
+          <span>${e.srcs.length} source${e.srcs.length>1?"s":""}</span>
+          <span class="senti ${e.senti<0?"dn":"up"}">${fmt(e.senti)}</span>
+        </div>
+      </div>
+    </div>`;
+  }).join("");
+
+  $$(".card").forEach(c => c.onclick = () => openDetail(+c.dataset.id));
+  EV.forEach(e => delete e.fresh);
+}
+
+/* ---------------- détail ---------------- */
+function openDetail(id){
+  const e = EV.find(x => x.id === id);
+  if (!e) return;
+  e.unread = false;
+  current = id;
+  const p = PF.find(x => x.sym === e.sym);
+  const fb = feedback[id];
+
+  $("#p-detail").innerHTML = `
+    <div class="back" id="backBtn">← Retour au fil · ${e.ago}</div>
+    <div class="hero">
+      <div class="row1">
+        <div class="bigring" style="border:3px solid ${ringColor(e.score)}">${e.score}</div>
+        <div>
+          <div class="ttl">${p ? p.nm : e.sym} · ${e.sym}</div>
+          <div class="sub">${e.type} — ${e.horizon} <span class="info-i" data-term="type">i</span></div>
+        </div>
+      </div>
+      <p>${e.full}</p>
+      <p style="margin-top:8px;opacity:.6;font-size:10.5px">Score d'impact <span class="info-i" data-term="impact">i</span> — voir le tutoriel pour l'interprétation.</p>
+    </div>
+    <div class="grid2">
+      <div class="stat"><div class="k">Sentiment<span class="info-i" data-term="senti">i</span></div><div class="v ${e.senti<0?"dn":"up"}">${fmt(e.senti)}</div></div>
+      <div class="stat"><div class="k">Confiance<span class="info-i" data-term="conf">i</span></div><div class="v">${e.conf} %</div></div>
+      <div class="stat"><div class="k">Ta position<span class="info-i" data-term="pos">i</span></div><div class="v">${p ? p.wt + " %" : "—"}</div></div>
+      <div class="stat"><div class="k">Contagion<span class="info-i" data-term="cont">i</span></div><div class="v" style="font-size:12px;padding-top:3px">${e.contagion}</div></div>
+    </div>
+    <div class="why">
+      <div class="k">Pourquoi ce score</div>
+      <p>${e.why}</p>
+    </div>
+    <div class="lbl" style="margin-bottom:8px">Sources · ordre de détection</div>
+    ${e.srcs.map(s => `<div class="src"><span class="t">${s[0]}</span>${s[1]}<span class="auth">${s[2]}</span></div>`).join("")}
+    <div class="actions">
+      <div class="btn ${fb==="ok"?"done":""}" data-fb="ok">${fb==="ok"?"Noté ✓":"Pertinent"}</div>
+      <div class="btn ${fb==="no"?"dismissed":""}" data-fb="no">${fb==="no"?"Ignoré":"Bruit"}</div>
+      <div class="btn primary" data-fb="open">Ouvrir</div>
+    </div>`;
+
+  go("detail");
+  $("#backBtn").onclick = () => go("feed");
+  $$("#p-detail [data-fb]").forEach(b => b.onclick = () => {
+    const v = b.dataset.fb;
+    if (v === "open"){ toast("La source s'ouvrirait dans le navigateur."); return; }
+    feedback[id] = v;
+    toast(v === "ok"
+      ? "Noté. Le poids de ces sources augmente."
+      : "Noté. Ce type d'événement sera moins prioritaire.");
+    openDetail(id);
+  });
+}
+
+/* ---------------- consensus analystes (données de démonstration) ---------------- */
+const CONS = {
+  ASML: {buy:31, hold:6,  sell:1, target:1080, spot:942,  cur:"€"},
+  NVDA: {buy:52, hold:8,  sell:2, target:198,  spot:174,  cur:"$"},
+  TTE:  {buy:14, hold:11, sell:3, target:63,   spot:58,   cur:"€"},
+  MC:   {buy:19, hold:9,  sell:2, target:685,  spot:612,  cur:"€"},
+  SAN:  {buy:12, hold:13, sell:2, target:105,  spot:98,   cur:"€"},
+  BN:   {buy:9,  hold:14, sell:3, target:74,   spot:71,   cur:"€"}
+};
+
+/* ---------------- moteur d'arbitrage ---------------- */
+const ARB = [
+  {
+    id:"a1", sym:"NVDA", evId:2, action:"Renforcement", cls:"buy", conf:3, confLbl:"Élevée",
+    teaser:"ASML relève sa guidance EUV — signal avancé sur les volumes de puces.",
+    chain:[
+      ["Événement déclencheur","ASML relève sa guidance annuelle, portée par la demande en lithographie EUV. Objectif de marge brute revu à la hausse."],
+      ["Mécanisme","Les commandes de machines EUV sont un indicateur avancé de la capacité de production de puces avancées, 12 à 18 mois plus tôt. ASML est le fournisseur exclusif de cette technologie."],
+      ["Lecture sur ta position","NVDA (15 % du portefeuille) dépend de cette capacité de production pour ses GPU haut de gamme. Le signal ASML précède historiquement les révisions de volume chez les concepteurs."]
+    ],
+    caveat:"La corrélation EUV → volumes GPU s'est vérifiée sur les trois derniers cycles, mais reste indirecte : ASML fournit toute l'industrie, pas seulement NVIDIA."
+  },
+  {
+    id:"a2", sym:"TTE", evId:1, action:"Maintien", cls:"hold", conf:2, confLbl:"Modérée",
+    teaser:"Enquête de la Commission ouverte, mais risque non encore quantifiable.",
+    chain:[
+      ["Événement déclencheur","Enquête de la Commission européenne sur les contrats d'approvisionnement gazier long terme. Montant de l'amende non chiffré."],
+      ["Mécanisme","Une enquête n'est pas une sanction. Le calendrier moyen d'une procédure DG COMP dépasse 18 mois, et le marché price généralement le risque avant l'issue."],
+      ["Lecture sur ta position","TTE pèse 20 % du portefeuille — l'exposition est significative, mais vendre sur une ouverture d'enquête revient à matérialiser une perte sur un risque non encore quantifié."]
+    ],
+    caveat:"Aucune quantification possible tant que la Commission n'a pas notifié de griefs. Le point de décision se situe à cette étape, pas aujourd'hui."
+  },
+  {
+    id:"a3", sym:"MC", evId:3, action:"Prise de bénéfices", cls:"take", conf:1, confLbl:"Faible",
+    teaser:"Annonce produit sans effet chiffré, cours en haut de fourchette.",
+    chain:[
+      ["Événement déclencheur","Lancement d'une ligne haute joaillerie sur le marché asiatique. Aucun effet chiffré communiqué."],
+      ["Mécanisme","Annonce produit sans guidance associée : l'impact sur le résultat n'est pas estimable à ce stade. Signal de nature structurelle, pas de catalyseur court terme."],
+      ["Lecture sur ta position","Le cours reste proche du haut de la fourchette de consensus. La suggestion vient de la valorisation, pas de la news — elle est faible et purement indicative."]
+    ],
+    caveat:"Confiance faible assumée : aucune donnée chiffrée ne soutient cette suggestion. À ignorer sans hésitation si ta thèse d'investissement est de long terme."
+  }
+];
+
+function consBar(c){
+  const tot = c.buy + c.hold + c.sell;
+  const pct = n => (n / tot * 100).toFixed(1);
+  const up = ((c.target - c.spot) / c.spot * 100);
+  return `<div class="cons">
+    <div class="cr"><span class="kk">Consensus analystes</span>
+      <span class="demo">données simulées</span></div>
+    <div class="cbar">
+      <i class="b" style="width:${pct(c.buy)}%"></i>
+      <i class="h" style="width:${pct(c.hold)}%"></i>
+      <i class="s" style="width:${pct(c.sell)}%"></i>
+    </div>
+    <div class="cleg">
+      <span><u style="background:var(--up)"></u>${c.buy} achat</span>
+      <span><u style="background:#4A63A8"></u>${c.hold} conserver</span>
+      <span><u style="background:var(--signal)"></u>${c.sell} vente</span>
+    </div>
+    <div class="target">
+      <span style="color:var(--muted)">Objectif moyen ${c.cur}${c.target}</span>
+      <span class="${up >= 0 ? "up" : "dn"}">${up >= 0 ? "+" : "−"}${Math.abs(up).toFixed(1).replace(".", ",")} % vs ${c.cur}${c.spot}</span>
+    </div>
+  </div>`;
+}
+
+function renderArb(){
+  const active = ARB.filter(a => {
+    const p = PF.find(x => x.sym === a.sym);
+    return p && p.on;
+  });
+  $("#arbCount").textContent = active.length ? active.length + " actif" + (active.length > 1 ? "s" : "") : "";
+  const el = $("#arbList");
+
+  if (!active.length){
+    el.innerHTML = `<div class="empty" style="padding:26px 16px">
+      <b>Aucun arbitrage suggéré</b>
+      <p>Le moteur ne propose une lecture que lorsqu'un événement capté touche une ligne active.</p></div>`;
+    return;
+  }
+
+  el.innerHTML = active.map(a => {
+    const p = PF.find(x => x.sym === a.sym);
+    const c = CONS[a.sym];
+    const strong = a.conf === 3 ? " strong" : "";
+    const tot = c.buy + c.hold + c.sell;
+    const upside = ((c.target - c.spot) / c.spot * 100);
+    return `<div class="arb${strong}" data-arb="${a.id}">
+      <div class="top">
+        <span class="sym">${a.sym}</span>
+        <span class="act ${a.cls}">${a.action}</span>
+        <span class="conf">
+          <span class="confdots">${[1,2,3].map(n => `<i class="${n <= a.conf ? "f" : ""}"></i>`).join("")}</span>
+          ${a.confLbl}
+          <span class="chev">▾</span>
+        </span>
+      </div>
+
+      <p class="teaser">${a.teaser}</p>
+      <div class="minicons">
+        <span class="minibar">
+          <i style="background:var(--up);width:${c.buy / tot * 100}%"></i>
+          <i style="background:#4A63A8;width:${c.hold / tot * 100}%"></i>
+          <i style="background:var(--signal);width:${c.sell / tot * 100}%"></i>
+        </span>
+        <span>consensus ${c.buy}/${tot} achat</span>
+        <span style="margin-left:auto;color:${upside >= 0 ? "var(--up)" : "var(--signal)"}">${upside >= 0 ? "+" : "−"}${Math.abs(upside).toFixed(1).replace(".", ",")} %</span>
+      </div>
+
+      <div class="arbdet">
+        <div class="chain">
+          ${a.chain.map((l, i) => `<div class="link ${i === a.chain.length - 1 ? "end" : ""}">
+            <div class="node"><b></b><em></em></div>
+            <div class="txt"><div class="kk">${l[0]}</div><p>${l[1]}</p></div>
+          </div>`).join("")}
+        </div>
+        <p style="font-size:10.5px;line-height:1.5;color:var(--muted);margin-bottom:11px">
+          <b style="color:var(--ice);font-weight:500">Réserve —</b> ${a.caveat}
+        </p>
+        ${consBar(c)}
+        <span class="srclink" data-ev="${a.evId}">→ Ouvrir l'alerte source</span>
+      </div>
+    </div>`;
+  }).join("");
+
+  $$("[data-arb]").forEach(n => n.onclick = e => {
+    if (e.target.closest(".srclink") || e.target.closest(".info-i")) return;
+    n.classList.toggle("open");
+  });
+
+  $$(".srclink").forEach(l => l.onclick = e => {
+    e.stopPropagation();
+    openDetail(+l.dataset.ev);
+  });
+}
+
+/* ---------------- portefeuille ---------------- */
+function contagionFor(sym){
+  const out = new Set();
+  ARB.forEach(a => {
+    if (a.sym === sym){
+      const ev = EV.find(e => e.id === a.evId);
+      if (ev && ev.contagion && ev.contagion !== "—") out.add(ev.contagion);
+    }
+    // relation inverse : si sym est cité comme contagion d'une autre ligne
+    const ev = EV.find(e => e.id === a.evId);
+    if (ev && ev.contagion === sym && a.sym !== sym) out.add(a.sym);
+  });
+  return [...out];
+}
+
+function renderPF(){
+  $("#pfList").innerHTML = PF.map((p, i) => {
+    const cont = contagionFor(p.sym);
+    return `
+    <div class="line ${p.on ? "" : "paused"}">
+      <div class="r1">
+        <span class="sym">${p.sym}</span>
+        <span class="nm">${p.nm}</span>
+        <span class="wt">${p.wt} %</span>
+        <div class="toggle ${p.on ? "on" : ""}" data-pf="${i}"><i></i></div>
+      </div>
+      <div class="r2">
+        <div class="spark">${p.spark.map((h, k) => {
+          const last = k === p.spark.length - 1;
+          const col = last ? (p.senti < 0 ? "var(--down)" : "var(--up)") : "";
+          return `<i style="height:${h}%${last ? ";background:" + col + ";opacity:1" : ""}"></i>`;
+        }).join("")}</div>
+        <span class="sv" style="color:${p.senti < 0 ? "var(--down)" : "var(--up)"}">${fmt(p.senti)}</span>
+      </div>
+      <div class="thr">
+        <span class="k"><span class="thrval">SEUIL ${p.thr}</span><span class="info-i" data-term="thr" style="margin-left:6px">i</span></span>
+        <input type="range" min="20" max="95" value="${p.thr}" data-thr="${i}">
+        <span class="est">≈${alertsPerWeek(p.thr)}/sem</span>
+      </div>
+      <div class="contag ${cont.length ? "" : "none"}">
+        <span class="ic">↝</span>
+        ${cont.length
+          ? `Contagion détectée avec <b>${cont.join(", ")}</b>`
+          : "Aucune contagion détectée sur cette ligne"}
+        <span class="info-i" data-term="cont" style="margin-left:2px">i</span>
+      </div>
+    </div>`;
+  }).join("");
+
+  $$("[data-pf]").forEach(t => t.onclick = () => {
+    const p = PF[+t.dataset.pf];
+    p.on = !p.on;
+    toast(p.on ? `${p.sym} réactivé.` : `${p.sym} mis en pause — plus aucune notification.`);
+    renderPF(); renderArb(); renderFeed();
+  });
+
+  $$("[data-thr]").forEach(r => {
+    r.oninput = () => {
+      const p = PF[+r.dataset.thr];
+      p.thr = +r.value;
+      const box = r.closest(".thr");
+      box.querySelector(".thrval").textContent = "SEUIL " + p.thr;
+      box.querySelector(".est").textContent = "≈" + alertsPerWeek(p.thr) + "/sem";
+      renderFeed();
+    };
+    r.onchange = () => {
+      const p = PF[+r.dataset.thr];
+      toast(`${p.sym} : seuil ${p.thr} · environ ${alertsPerWeek(p.thr)} alertes par semaine.`);
+    };
+  });
+}
+
+/* ---------------- navigation ---------------- */
+const TITLES = {feed:"SENTINEL", detail:"ALERTE", pf:"SENTINEL", brief:"BRIEF", set:"RÉGLAGES"};
+function go(page){
+  $$(".page").forEach(p => p.classList.remove("on"));
+  $("#p-" + page).classList.add("on");
+  $("#barTitle").textContent = TITLES[page];
+  $$(".tab").forEach(t => t.classList.toggle("on",
+    t.dataset.p === page || (page === "detail" && t.dataset.p === "feed")));
+  $("#view").scrollTop = 0;
+  if (page === "feed") renderFeed();
+  if (page === "pf"){ renderArb(); renderPF(); }
+}
+
+$$(".tab").forEach(t => t.onclick = () => go(t.dataset.p));
+
+$$(".chip").forEach(c => c.onclick = () => {
+  $$(".chip").forEach(x => x.classList.remove("on"));
+  c.classList.add("on");
+  filter = c.dataset.f;
+  renderFeed();
+});
+
+$$("[data-t]").forEach(t => t.onclick = () => {
+  t.classList.toggle("on");
+  const labels = {quiet:"Heures de silence", tg:"Alertes Telegram", cont:"Détection de contagion"};
+  toast(labels[t.dataset.t] + (t.classList.contains("on") ? " activé." : " désactivé."));
+});
+
+/* ---------------- alerte entrante simulée ---------------- */
+$("#bell").onclick = () => {
+  if (fired){ toast("Une seule alerte simulée par session."); return; }
+  fired = true;
+  EV.unshift({...INCOMING});
+  $("#bell").classList.add("has");
+  go("feed");
+  $$(".chip").forEach(x => x.classList.remove("on"));
+  $(".chip[data-f='all']").classList.add("on");
+  filter = "all";
+  renderFeed();
+  toast("NVDA · impact 79 — résultats T2 publiés.");
+};
+
+/* ---------------- ajout de ligne ---------------- */
+function openAdd(){
+  $("#addSym").value = ""; $("#addName").value = "";
+  $("#addWt").value = ""; $("#addThr").value = 65;
+  $("#addErr").classList.remove("show");
+  $("#addOverlay").classList.add("show");
+  setTimeout(() => $("#addSym").focus(), 200);
+}
+function closeAdd(){ $("#addOverlay").classList.remove("show"); }
+
+$("#addBtn").onclick = openAdd;
+$("#addClose").onclick = closeAdd;
+$("#addOverlay").addEventListener("click", e => { if (e.target.id === "addOverlay") closeAdd(); });
+
+$("#addSubmit").onclick = () => {
+  const sym = $("#addSym").value.trim().toUpperCase();
+  const nm = $("#addName").value.trim();
+  const wt = parseFloat($("#addWt").value);
+  const thr = parseInt($("#addThr").value, 10);
+  const err = $("#addErr");
+
+  if (!sym || !nm){ err.textContent = "Ticker et nom sont requis."; err.classList.add("show"); return; }
+  if (PF.some(p => p.sym === sym)){ err.textContent = "Ce ticker est déjà suivi."; err.classList.add("show"); return; }
+  if (!wt || wt <= 0 || wt > 100){ err.textContent = "Poids invalide (0–100)."; err.classList.add("show"); return; }
+  if (!thr || thr < 20 || thr > 95){ err.textContent = "Seuil invalide (20–95)."; err.classList.add("show"); return; }
+  err.classList.remove("show");
+
+  PF.push({sym, nm, wt, thr, senti:0, on:true, spark:[30,30,30,30,30,30,30]});
+  closeAdd();
+  toast(`${sym} ajouté au portefeuille.`);
+  renderPF(); renderArb(); renderFeed();
+};
+
+/* ---------------- rafraîchir le fil ---------------- */
+$("#refreshBtn").onclick = () => {
+  const btn = $("#refreshBtn");
+  btn.classList.add("spin");
+  setTimeout(() => btn.classList.remove("spin"), 700);
+  setTimeout(() => {
+    toast("Fil à jour — dernier cycle il y a quelques secondes.");
+    renderFeed(); renderArb();
+  }, 500);
+};
+
+/* ---------------- lampe / tutoriel ---------------- */
+function openLamp(term){
+  $("#lampOverlay").classList.add("show");
+  $$(".term").forEach(t => t.classList.remove("hit"));
+  if (term){
+    const el = $("#term-" + term);
+    if (el){
+      setTimeout(() => {
+        el.scrollIntoView({block:"start", behavior:"smooth"});
+        el.classList.add("hit");
+      }, 80);
+    }
+  } else {
+    $("#lampBody").scrollTop = 0;
+  }
+}
+function closeLamp(){ $("#lampOverlay").classList.remove("show"); }
+
+$("#lampBtn").onclick = () => openLamp(null);
+$("#lampClose").onclick = closeLamp;
+$("#lampOverlay").addEventListener("click", e => { if (e.target.id === "lampOverlay") closeLamp(); });
+
+document.addEventListener("click", e => {
+  const i = e.target.closest(".info-i");
+  if (i){ e.stopPropagation(); openLamp(i.dataset.term); }
+});
+
+/* ---------------- horloge ---------------- */
+function tick(){
+  const d = new Date();
+  $("#clock").textContent = d.getHours() + ":" + String(d.getMinutes()).padStart(2, "0");
+}
+tick(); setInterval(tick, 20000);
+
+renderFeed();
+renderPF();
+renderArb();
+</script>
+</body>
+</html>
