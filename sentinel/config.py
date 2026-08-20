@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import logging
 import os
-
+import re
 from typing import Optional
+from urllib.parse import urlparse
 
 from dotenv import load_dotenv
 from supabase import Client, create_client
@@ -14,7 +15,8 @@ load_dotenv()
 
 log = logging.getLogger(__name__)
 
-DEFAULT_SUPABASE_URL = "https://zayezktpxysiwlhbchqk.supabase.co"
+PROJECT_REF = "zayezktpxysiwlhbchqk"
+DEFAULT_SUPABASE_URL = f"https://{PROJECT_REF}.supabase.co"
 
 KEY_ENV_NAMES = (
     "SUPABASE_SERVICE_KEY",
@@ -33,8 +35,36 @@ def first_env(*names: str) -> str:
     return ""
 
 
+def normalize_supabase_url(raw: str) -> str:
+    """Accepte l'URL API, le ref projet, ou l'URL du dashboard."""
+    value = raw.strip().rstrip("/")
+    if re.fullmatch(r"[a-z0-9]{20}", value):
+        return f"https://{value}.supabase.co"
+
+    parsed = urlparse(value if "://" in value else f"https://{value}")
+    host = (parsed.hostname or "").lower()
+
+    if host.endswith(".supabase.co") and host.count(".") >= 2:
+        return f"https://{host}"
+
+    match = re.search(r"/dashboard/project/([a-z0-9]+)", parsed.path or "")
+    if match:
+        return f"https://{match.group(1)}.supabase.co"
+
+    if "supabase.com" in host:
+        log.warning(
+            "SUPABASE_URL pointe vers %s (dashboard) — repli sur %s",
+            host,
+            DEFAULT_SUPABASE_URL,
+        )
+        return DEFAULT_SUPABASE_URL
+
+    return value
+
+
 def supabase_url() -> str:
-    url = first_env("SUPABASE_URL", "NEXT_PUBLIC_SUPABASE_URL") or DEFAULT_SUPABASE_URL
+    raw = first_env("SUPABASE_URL", "NEXT_PUBLIC_SUPABASE_URL") or DEFAULT_SUPABASE_URL
+    url = normalize_supabase_url(raw)
     if not url:
         raise RuntimeError("SUPABASE_URL manquant (secret GitHub ou .env).")
     return url
