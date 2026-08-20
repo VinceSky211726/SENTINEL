@@ -18,6 +18,14 @@ npm install
 npm run dev
 ```
 
+## Développement local
+
+Ne pas enchaîner `npm run build` puis `npm run dev` sans nettoyer le cache : si le CSS ne charge plus (page blanche, texte brut), arrêter le serveur et relancer :
+
+```bash
+rm -rf .next && npm run dev
+```
+
 Ouvrir [http://localhost:3000](http://localhost:3000).
 
 ## Écrans

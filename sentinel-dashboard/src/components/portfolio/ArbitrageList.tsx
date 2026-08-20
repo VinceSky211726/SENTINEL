@@ -1,8 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import type { ArbitrageSuggestion } from "@/lib/arbitrage";
+import {
+  computeSignalConsensus,
+  formatMovePct,
+} from "@/lib/sentiment";
+import type { SentinelEvent } from "@/lib/types";
 import { InfoButton } from "@/components/tutorial/TutorialSheet";
 
 const ACTION_STYLES: Record<
@@ -17,10 +22,23 @@ const ACTION_STYLES: Record<
 
 export function ArbitrageList({
   items,
+  events,
 }: {
   items: ArbitrageSuggestion[];
+  events: SentinelEvent[];
 }) {
   const [openId, setOpenId] = useState<string | null>(null);
+
+  const consensusById = useMemo(() => {
+    const map = new Map<string, ReturnType<typeof computeSignalConsensus>>();
+    for (const arb of items) {
+      map.set(
+        arb.id,
+        computeSignalConsensus(arb.symbol, events, arb.sourceEvent)
+      );
+    }
+    return map;
+  }, [items, events]);
 
   if (items.length === 0) {
     return (
@@ -39,6 +57,10 @@ export function ArbitrageList({
       {items.map((arb) => {
         const open = openId === arb.id;
         const strong = arb.confidence === 3;
+        const consensus = consensusById.get(arb.id)!;
+        const buyPct = (consensus.buy / consensus.total) * 100;
+        const holdPct = (consensus.hold / consensus.total) * 100;
+        const sellPct = (consensus.sell / consensus.total) * 100;
         return (
           <div
             key={arb.id}
@@ -64,7 +86,7 @@ export function ArbitrageList({
               <span className="ml-auto flex items-center gap-1 font-mono text-[9px] text-muted">
                 <span className="flex gap-0.5">
                   {[1, 2, 3].map((n) => (
-                    <i
+                    <span
                       key={n}
                       className={`block h-[9px] w-1 rounded-[1px] ${
                         n <= arb.confidence ? "bg-ice" : "bg-line"
@@ -84,9 +106,52 @@ export function ArbitrageList({
             </div>
 
             {!open ? (
-              <p className="mt-2 line-clamp-2 text-[11px] leading-snug text-muted">
-                {arb.teaser}
-              </p>
+              <>
+                <p className="mt-2 line-clamp-2 text-[11px] leading-snug text-muted">
+                  {arb.teaser}
+                </p>
+                <div className="mt-2 flex items-center gap-1.5 font-mono text-[9px] text-muted">
+                  <span className="flex h-[3px] w-[46px] shrink-0 overflow-hidden rounded-full">
+                    {buyPct > 0 ? (
+                      <span
+                        className="block h-full"
+                        style={{
+                          width: `${buyPct}%`,
+                          background: "var(--up)",
+                        }}
+                      />
+                    ) : null}
+                    {holdPct > 0 ? (
+                      <span
+                        className="block h-full"
+                        style={{
+                          width: `${holdPct}%`,
+                          background: "#4A63A8",
+                        }}
+                      />
+                    ) : null}
+                    {sellPct > 0 ? (
+                      <span
+                        className="block h-full"
+                        style={{
+                          width: `${sellPct}%`,
+                          background: "var(--signal)",
+                        }}
+                      />
+                    ) : null}
+                  </span>
+                  <span>
+                    consensus {consensus.buy}/{consensus.total} achat
+                  </span>
+                  <span
+                    className={`ml-auto font-semibold ${
+                      consensus.upsidePct >= 0 ? "text-up" : "text-signal"
+                    }`}
+                  >
+                    {formatMovePct(consensus.upsidePct)}
+                  </span>
+                </div>
+              </>
             ) : null}
 
             <div

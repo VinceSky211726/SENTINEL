@@ -7,6 +7,7 @@ import {
   buildArbitrages,
   contagionForSymbol,
 } from "@/lib/arbitrage";
+import { computeSymbolSentiment } from "@/lib/sentiment";
 import type { PortfolioRow, SentinelEvent } from "@/lib/types";
 import {
   alertsPerWeekEstimate,
@@ -29,31 +30,35 @@ function Sparkline({
   sentiment: number | null;
 }) {
   const data = values.length > 0 ? values : [30, 30, 30, 30, 30, 30, 30];
+  const colored = sentiment != null;
   return (
     <div className="flex h-5 flex-1 items-end gap-0.5">
       {data.map((h, i) => {
         const last = i === data.length - 1;
-        const color =
-          last && sentiment != null
-            ? sentiment < 0
-              ? "var(--down)"
-              : "var(--up)"
-            : undefined;
+        const height = `${Math.max(12, Math.min(100, h))}%`;
+        if (last && colored) {
+          const bg = sentiment < 0 ? "var(--down)" : "var(--up)";
+          return (
+            <span
+              key={i}
+              className="block flex-1 rounded-[1.5px]"
+              style={{ height, background: bg }}
+            />
+          );
+        }
         return (
-          <i
+          <span
             key={i}
-            className="flex-1 rounded-[1.5px] bg-ice/40"
-            style={{
-              height: `${Math.max(12, Math.min(100, h))}%`,
-              background: color,
-              opacity: last && color ? 1 : undefined,
-            }}
+            className="block flex-1 rounded-[1.5px] bg-ice/40"
+            style={{ height }}
           />
         );
       })}
     </div>
   );
 }
+
+const SPARK_LEN = 7;
 
 function Toggle({ on, onToggle }: { on: boolean; onToggle: () => void }) {
   return (
@@ -65,7 +70,7 @@ function Toggle({ on, onToggle }: { on: boolean; onToggle: () => void }) {
         on ? "bg-ice" : "bg-line"
       }`}
     >
-      <i
+      <span
         className={`absolute top-0.5 h-[15px] w-[15px] rounded-full transition-all ${
           on ? "left-[17px] bg-deep" : "left-0.5 bg-muted"
         }`}
@@ -93,6 +98,28 @@ export function PortfolioView({
   const arbitrages = useMemo(
     () => buildArbitrages(events, rows),
     [events, rows]
+  );
+
+  const displayRows = useMemo(
+    () =>
+      rows.map((row) => {
+        if (
+          row.sentiment_score != null &&
+          row.sentiment_spark.length >= SPARK_LEN
+        ) {
+          return row;
+        }
+        const computed = computeSymbolSentiment(row.symbol, events);
+        return {
+          ...row,
+          sentiment_score: row.sentiment_score ?? computed.score,
+          sentiment_spark:
+            row.sentiment_spark.length > 0
+              ? row.sentiment_spark
+              : computed.spark,
+        };
+      }),
+    [rows, events]
   );
 
   const activeArbs = arbitrages.filter((a) => {
@@ -164,13 +191,13 @@ export function PortfolioView({
       </div>
 
       <ArbitrageHeader count={activeArbs.length} />
-      <ArbitrageList items={activeArbs} />
+      <ArbitrageList items={activeArbs} events={events} />
 
       <div className="mb-2 mt-4 font-mono text-[9px] uppercase tracking-[0.14em] text-muted">
         Lignes suivies
       </div>
 
-      {rows.map((row) => {
+      {displayRows.map((row) => {
         const est =
           row.alerts_per_week_est ?? alertsPerWeekEstimate(row.alert_threshold);
         const contagion = contagionForSymbol(
