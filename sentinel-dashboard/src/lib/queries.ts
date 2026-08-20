@@ -15,6 +15,9 @@ export async function fetchFeedEvents(): Promise<SentinelEvent[]> {
     .from("events")
     .select(EVENT_FEED_SELECT)
     .eq("filter_passed", true)
+    .eq("llm_processed", true)
+    .not("title", "is", null)
+    .not("impact_score", "is", null)
     .order("impact_score", { ascending: false });
 
   if (error) throw error;
@@ -28,6 +31,7 @@ export async function fetchEventById(id: string): Promise<SentinelEvent | null> 
     .select(EVENT_FEED_SELECT)
     .eq("id", id)
     .eq("filter_passed", true)
+    .eq("llm_processed", true)
     .maybeSingle();
 
   if (error) throw error;
@@ -64,6 +68,7 @@ export async function fetchUnreadCount(): Promise<number> {
     .from("events")
     .select("id", { count: "exact", head: true })
     .eq("filter_passed", true)
+    .eq("llm_processed", true)
     .eq("is_read", false);
 
   if (error) throw error;
@@ -113,6 +118,7 @@ export async function fetchBriefStats(
       .from("events")
       .select(EVENT_FEED_SELECT)
       .eq("filter_passed", true)
+      .eq("llm_processed", true)
       .eq("is_read", false)
       .gte("impact_score", 40)
       .order("impact_score", { ascending: false })
@@ -181,6 +187,7 @@ export async function fetchEventTypeKeys(): Promise<
     .from("events")
     .select("event_type_key, event_type")
     .eq("filter_passed", true)
+    .eq("llm_processed", true)
     .not("event_type_key", "is", null);
 
   if (error) throw error;

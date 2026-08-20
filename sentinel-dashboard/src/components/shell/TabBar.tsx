@@ -31,6 +31,7 @@ export function TabBar({ initialUnread }: { initialUnread: number }) {
             .from("events")
             .select("id", { count: "exact", head: true })
             .eq("filter_passed", true)
+            .eq("llm_processed", true)
             .eq("is_read", false);
           setUnread(count ?? 0);
         }

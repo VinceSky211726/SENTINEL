@@ -69,4 +69,11 @@ export type BriefStats = {
 };
 
 export const EVENT_FEED_SELECT =
-  "id, symbol, event_type, event_type_key, title, summary, body, scoring_rationale, impact_score, sentiment, confidence_pct, horizon, contagion_symbol, sources, is_read, filter_passed, published_at, detected_at, created_at";
+  "id, symbol, event_type, event_type_key, title, summary, body, scoring_rationale, impact_score, sentiment, confidence_pct, horizon, contagion_symbol, sources, is_read, filter_passed, llm_processed, published_at, detected_at, created_at";
+
+/** Alerte affichable : filtrée ET enrichie par le LLM (titre + impact). */
+export function isFeedReady(event: Pick<SentinelEvent, "filter_passed" | "llm_processed" | "title" | "impact_score">): boolean {
+  if (!event.filter_passed) return false;
+  if (event.llm_processed === false) return false;
+  return Boolean(event.title) && event.impact_score != null;
+}

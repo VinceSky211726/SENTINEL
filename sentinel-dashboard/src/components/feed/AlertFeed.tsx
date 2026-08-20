@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { createBrowserClient } from "@/lib/supabase/client";
 import type { CompressionStats, PortfolioRow, SentinelEvent } from "@/lib/types";
-import { EVENT_FEED_SELECT } from "@/lib/types";
+import { EVENT_FEED_SELECT, isFeedReady } from "@/lib/types";
 import { CompressionBanner } from "./CompressionBanner";
 import {
   FilterChips,
@@ -81,7 +81,7 @@ export function AlertFeed({
         { event: "INSERT", schema: "public", table: "events" },
         (payload) => {
           const row = normalizeRow(payload.new as Record<string, unknown>);
-          if (row.filter_passed) prependEvent(row);
+          if (isFeedReady(row)) prependEvent(row);
         }
       )
       .on(
@@ -89,7 +89,7 @@ export function AlertFeed({
         { event: "UPDATE", schema: "public", table: "events" },
         (payload) => {
           const row = normalizeRow(payload.new as Record<string, unknown>);
-          if (row.filter_passed) prependEvent(row);
+          if (isFeedReady(row)) prependEvent(row);
           else {
             setEvents((prev) => prev.filter((e) => e.id !== row.id));
           }
