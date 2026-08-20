@@ -27,92 +27,123 @@ GEMINI_URL = (
 )
 GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
 HTTP_TIMEOUT = 60.0
-MAX_ITEMS = int(os.getenv("LLM_MAX_ITEMS", "20"))
+MAX_ITEMS = int(os.getenv("LLM_MAX_ITEMS", "8"))
 
 EventTypeKey = Literal[
     "reg", "guid", "prod", "jur", "res", "ma", "mgmt", "rating", "macro", "rumor"
 ]
 HorizonKey = Literal["immediate", "short_term", "structural"]
+TypeEvenement = Literal[
+    "resultats",
+    "guidance",
+    "M&A",
+    "reglementaire",
+    "juridique",
+    "produit",
+    "direction",
+    "notation",
+    "macro",
+    "rumeur",
+    "bruit",
+]
+HorizonLlm = Literal["immediat", "court_terme", "structurel"]
 
-EVENT_TYPE_LABELS: dict[str, str] = {
-    "reg": "Réglementaire",
-    "guid": "Guidance",
-    "prod": "Produit",
-    "jur": "Juridique",
-    "res": "Résultats",
-    "ma": "M&A",
-    "mgmt": "Direction",
-    "rating": "Notation",
-    "macro": "Macro",
-    "rumor": "Rumeur",
+# Prompt section 2.3 — analyse par clusters (batch)
+ANALYSIS_PROMPT_TEMPLATE = """Tu es analyste financier. On te donne des clusters d'actualités concernant des entreprises d'un portefeuille. Pour CHAQUE cluster, produis un objet JSON.
+
+Portefeuille de l'utilisateur (avec pondération) :
+{portfolio_json}
+
+Clusters à analyser :
+{clusters_json}
+
+Réponds UNIQUEMENT avec un tableau JSON, sans texte avant ou après, sans balises markdown. Schéma par élément :
+
+{{
+  "cluster_id": string,
+  "ticker_principal": string,
+  "type_evenement": one of ["resultats","guidance","M&A","reglementaire","juridique","produit","direction","notation","macro","rumeur","bruit"],
+  "sentiment": float entre -1.0 et 1.0,
+  "impact_score": int 0-100,
+  "horizon": one of ["immediat","court_terme","structurel"],
+  "confiance": float 0.0-1.0,
+  "resume": string,
+  "contagion": [string],
+  "justification_score": string
+}}
+
+Règles impératives :
+- Si l'information est déjà publique depuis plus de 48h, impact_score <= 20.
+- Si la source unique est un blog ou un forum, confiance <= 0.4.
+- "impact_score" mesure l'effet attendu sur la valorisation, PAS l'intérêt journalistique. Un article "5 raisons d'acheter X" = type "bruit", score 0.
+- Ne jamais inventer de chiffre absent des sources.
+- Si tu ne peux pas déterminer un champ, mets null plutôt que de deviner."""
+
+TYPE_EVENEMENT_TO_KEY: dict[str, EventTypeKey] = {
+    "resultats": "res",
+    "guidance": "guid",
+    "M&A": "ma",
+    "reglementaire": "reg",
+    "juridique": "jur",
+    "produit": "prod",
+    "direction": "mgmt",
+    "notation": "rating",
+    "macro": "macro",
+    "rumeur": "rumor",
+    "bruit": "rumor",
 }
 
-# Prompt section 2.3 — analyse d'un item déjà filtré
-SYSTEM_PROMPT = """Tu es Sentinel, analyste de veille financière personnelle.
-Tu reçois UN article déjà filtré par heuristiques. Ne jamais inventer de faits absents du texte.
+TYPE_EVENEMENT_LABELS: dict[str, str] = {
+    "resultats": "Résultats",
+    "guidance": "Guidance",
+    "M&A": "M&A",
+    "reglementaire": "Réglementaire",
+    "juridique": "Juridique",
+    "produit": "Produit",
+    "direction": "Direction",
+    "notation": "Notation",
+    "macro": "Macro",
+    "rumeur": "Rumeur",
+    "bruit": "Bruit",
+}
 
-Règles d'analyse :
-- impact_score (0-100) : ampleur ATTENDUE sur la valorisation du titre, pas l'intérêt médiatique.
-  Un « top 10 actions » score ~0. Une divergence résultats/guidance sur ligne volatile peut scorer haut.
-- sentiment (-1.0 à +1.0) : tonalité de l'information elle-même, indépendante de l'impact.
-- confidence_pct (0-100) : confiance dans TA propre analyse (pas confiance dans le titre).
-  Source unique type blog/forum → plafond 40 %.
-- event_type_key : reg|guid|prod|jur|res|ma|mgmt|rating|macro|rumor
-- horizon : immediate | short_term | structural
-- contagion_symbol : ticker d'une autre ligne du portefeuille impactée indirectement, ou null
-- title : titre factuel concis en français
-- summary : 1-2 phrases pour le fil d'alertes
-- body : paraphrase factuelle complète
-- scoring_rationale : pourquoi ce impact_score (2-3 phrases)
-
-Réponds UNIQUEMENT avec un objet JSON valide, sans markdown, sans commentaire."""
-
-USER_PROMPT_TEMPLATE = """Contexte portefeuille :
-- ticker : {symbol}
-- nom : {name}
-- poids : {weight_pct} %
-- position : {position_side}
-- seuil d'alerte impact : {alert_threshold}
-
-Article source :
-- titre brut : {raw_title}
-- corps brut : {raw_body}
-- url : {raw_url}
-- sources : {sources_json}
-
-Schéma JSON attendu :
-{{
-  "event_type_key": "reg|guid|prod|jur|res|ma|mgmt|rating|macro|rumor",
-  "title": "string",
-  "summary": "string",
-  "body": "string",
-  "scoring_rationale": "string",
-  "impact_score": 0,
-  "sentiment": 0.0,
-  "confidence_pct": 0,
-  "horizon": "immediate|short_term|structural",
-  "contagion_symbol": null
-}}"""
+HORIZON_MAP: dict[str, HorizonKey] = {
+    "immediat": "immediate",
+    "court_terme": "short_term",
+    "structurel": "structural",
+}
 
 
-class LlmOutput(BaseModel):
-    event_type_key: EventTypeKey
-    title: str = Field(min_length=1)
-    summary: str = Field(min_length=1)
-    body: str = Field(min_length=1)
-    scoring_rationale: str = Field(min_length=1)
-    impact_score: int = Field(ge=0, le=100)
-    sentiment: float = Field(ge=-1.0, le=1.0)
-    confidence_pct: int = Field(ge=0, le=100)
-    horizon: HorizonKey
-    contagion_symbol: Optional[str] = None
+class ClusterInput(BaseModel):
+    cluster_id: str
+    ticker_principal: str
+    raw_title: Optional[str] = None
+    raw_body: Optional[str] = None
+    raw_url: Optional[str] = None
+    sources: list[dict[str, Any]] = Field(default_factory=list)
+    published_at: Optional[str] = None
 
-    @field_validator("contagion_symbol", mode="before")
+
+class ClusterAnalysisOutput(BaseModel):
+    cluster_id: str
+    ticker_principal: str
+    type_evenement: Optional[TypeEvenement] = None
+    sentiment: Optional[float] = Field(default=None, ge=-1.0, le=1.0)
+    impact_score: Optional[int] = Field(default=None, ge=0, le=100)
+    horizon: Optional[HorizonLlm] = None
+    confiance: Optional[float] = Field(default=None, ge=0.0, le=1.0)
+    resume: Optional[str] = None
+    contagion: list[str] = Field(default_factory=list)
+    justification_score: Optional[str] = None
+
+    @field_validator("contagion", mode="before")
     @classmethod
-    def empty_contagion(cls, value: Any) -> Optional[str]:
-        if value in (None, "", "—", "-", "null"):
-            return None
-        return str(value).strip().upper()
+    def normalize_contagion(cls, value: Any) -> list[str]:
+        if value is None:
+            return []
+        if isinstance(value, list):
+            return [str(v).strip().upper() for v in value if v]
+        return []
 
 
 class PortfolioContext(BaseModel):
@@ -130,6 +161,7 @@ class PendingEvent(BaseModel):
     raw_body: Optional[str] = None
     raw_url: Optional[str] = None
     sources: list[dict[str, Any]] = Field(default_factory=list)
+    published_at: Optional[str] = None
 
 
 class LlmError(Exception):
@@ -170,7 +202,7 @@ def load_portfolio(client: Client) -> dict[str, PortfolioContext]:
 def load_pending_events(client: Client, limit: int) -> list[PendingEvent]:
     rows = (
         client.table("events")
-        .select("id, symbol, raw_title, raw_body, raw_url, sources")
+        .select("id, symbol, raw_title, raw_body, raw_url, sources, published_at")
         .eq("filter_passed", True)
         .eq("llm_processed", False)
         .order("detected_at", desc=True)
@@ -182,35 +214,59 @@ def load_pending_events(client: Client, limit: int) -> list[PendingEvent]:
     return [PendingEvent.model_validate(r) for r in rows]
 
 
-def build_user_prompt(event: PendingEvent, portfolio: PortfolioContext) -> str:
-    return USER_PROMPT_TEMPLATE.format(
-        symbol=event.symbol,
-        name=portfolio.name,
-        weight_pct=portfolio.weight_pct,
-        position_side=portfolio.position_side,
-        alert_threshold=portfolio.alert_threshold,
-        raw_title=event.raw_title or "",
-        raw_body=(event.raw_body or "")[:4000],
-        raw_url=event.raw_url or "",
-        sources_json=json.dumps(event.sources, ensure_ascii=False),
+def event_to_cluster(event: PendingEvent) -> ClusterInput:
+    return ClusterInput(
+        cluster_id=event.id,
+        ticker_principal=event.symbol,
+        raw_title=event.raw_title,
+        raw_body=(event.raw_body or "")[:4000] or None,
+        raw_url=event.raw_url,
+        sources=event.sources,
+        published_at=event.published_at,
     )
 
 
-def extract_json(text: str) -> dict[str, Any]:
+def portfolio_to_json(portfolio: dict[str, PortfolioContext]) -> str:
+    entries = [
+        {
+            "symbol": ctx.symbol,
+            "name": ctx.name,
+            "weight_pct": ctx.weight_pct,
+            "position_side": ctx.position_side,
+            "alert_threshold": ctx.alert_threshold,
+        }
+        for ctx in sorted(portfolio.values(), key=lambda p: p.symbol)
+    ]
+    return json.dumps(entries, ensure_ascii=False, indent=2)
+
+
+def build_analysis_prompt(
+    clusters: list[ClusterInput],
+    portfolio: dict[str, PortfolioContext],
+) -> str:
+    clusters_payload = [
+        c.model_dump(exclude_none=True) for c in clusters
+    ]
+    return ANALYSIS_PROMPT_TEMPLATE.format(
+        portfolio_json=portfolio_to_json(portfolio),
+        clusters_json=json.dumps(clusters_payload, ensure_ascii=False, indent=2),
+    )
+
+
+def extract_json_array(text: str) -> list[dict[str, Any]]:
     cleaned = text.strip()
     fence = re.search(r"```(?:json)?\s*([\s\S]*?)\s*```", cleaned)
     if fence:
         cleaned = fence.group(1).strip()
-    start = cleaned.find("{")
-    end = cleaned.rfind("}")
+    start = cleaned.find("[")
+    end = cleaned.rfind("]")
     if start == -1 or end == -1:
-        raise LlmError("JSON introuvable dans la réponse LLM")
+        raise LlmError("Tableau JSON introuvable dans la réponse LLM")
     return json.loads(cleaned[start : end + 1])
 
 
 def call_gemini(api_key: str, user_prompt: str) -> str:
     payload = {
-        "systemInstruction": {"parts": [{"text": SYSTEM_PROMPT}]},
         "contents": [{"role": "user", "parts": [{"text": user_prompt}]}],
         "generationConfig": {
             "temperature": 0.2,
@@ -233,11 +289,7 @@ def call_groq(api_key: str, user_prompt: str) -> str:
     payload = {
         "model": GROQ_MODEL,
         "temperature": 0.2,
-        "response_format": {"type": "json_object"},
-        "messages": [
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": user_prompt},
-        ],
+        "messages": [{"role": "user", "content": user_prompt}],
     }
     headers = {"Authorization": f"Bearer {api_key}"}
     with httpx.Client(timeout=HTTP_TIMEOUT) as client:
@@ -252,12 +304,12 @@ def call_groq(api_key: str, user_prompt: str) -> str:
         raise LlmError(f"Réponse Groq invalide: {data}") from exc
 
 
-def analyze_with_llm(
+def analyze_batch_with_llm(
     user_prompt: str,
     gemini_key: str,
     groq_key: str,
-) -> tuple[LlmOutput, str, bool]:
-    """Retourne (output, model_name, fallback_used)."""
+) -> tuple[list[ClusterAnalysisOutput], str, bool]:
+    """Retourne (outputs, model_name, fallback_used)."""
     raw: Optional[str] = None
     model = GEMINI_MODEL
     fallback = False
@@ -281,58 +333,103 @@ def analyze_with_llm(
         raise LlmError("Aucune clé LLM configurée")
 
     try:
-        parsed = LlmOutput.model_validate(extract_json(raw))
-    except (json.JSONDecodeError, ValidationError) as exc:
+        items = extract_json_array(raw)
+        outputs = [ClusterAnalysisOutput.model_validate(item) for item in items]
+    except (json.JSONDecodeError, ValidationError, TypeError) as exc:
         raise LlmError(f"JSON LLM invalide: {exc}") from exc
 
-    return parsed, model, fallback
+    return outputs, model, fallback
 
 
-def degraded_output(event: PendingEvent) -> LlmOutput:
-    title = (event.raw_title or "Information sans titre")[:200]
-    body = (event.raw_body or event.raw_title or "Contenu indisponible.")[:2000]
-    return LlmOutput(
-        event_type_key="rumor",
-        title=title,
-        summary=body[:280] if len(body) > 280 else body,
-        body=body,
-        scoring_rationale=(
-            "Analyse LLM indisponible (Gemini et Groq en échec). "
-            "Score conservateur appliqué — vérification manuelle recommandée."
-        ),
-        impact_score=25,
-        sentiment=0.0,
-        confidence_pct=20,
-        horizon="short_term",
-        contagion_symbol=None,
-    )
+def first_sentence(text: str) -> str:
+    text = text.strip()
+    if not text:
+        return ""
+    match = re.split(r"(?<=[.!?])\s+", text, maxsplit=1)
+    return match[0]
 
 
-def to_update_row(
-    event_id: str,
-    output: LlmOutput,
+def pick_contagion_symbol(
+    contagion: list[str],
+    portfolio: dict[str, PortfolioContext],
+) -> Optional[str]:
+    for ticker in contagion:
+        symbol = ticker.strip().upper()
+        if symbol in portfolio:
+            return symbol
+    return None
+
+
+def map_analysis_to_update(
+    event: PendingEvent,
+    analysis: ClusterAnalysisOutput,
+    portfolio: dict[str, PortfolioContext],
     *,
     llm_model: str,
     llm_fallback_used: bool,
 ) -> dict[str, Any]:
+    type_ev = analysis.type_evenement or "rumeur"
+    event_type_key = TYPE_EVENEMENT_TO_KEY.get(type_ev, "rumor")
+    event_type = TYPE_EVENEMENT_LABELS.get(type_ev, "Rumeur")
+
+    impact_score = analysis.impact_score if analysis.impact_score is not None else 25
+    if type_ev == "bruit":
+        impact_score = min(impact_score, 5)
+
+    sentiment = analysis.sentiment if analysis.sentiment is not None else 0.0
+    confidence_pct = int(round((analysis.confiance if analysis.confiance is not None else 0.2) * 100))
+    horizon = HORIZON_MAP.get(analysis.horizon or "court_terme", "short_term")
+
+    resume = analysis.resume or (event.raw_body or event.raw_title or "Contenu indisponible.")
+    title = (event.raw_title or first_sentence(resume) or "Information sans titre")[:200]
+
     now = datetime.now(timezone.utc).isoformat()
     return {
-        "id": event_id,
-        "event_type": EVENT_TYPE_LABELS.get(output.event_type_key, output.event_type_key),
-        "event_type_key": output.event_type_key,
-        "title": output.title,
-        "summary": output.summary,
-        "body": output.body,
-        "scoring_rationale": output.scoring_rationale,
-        "impact_score": output.impact_score,
-        "sentiment": output.sentiment,
-        "confidence_pct": output.confidence_pct,
-        "horizon": output.horizon,
-        "contagion_symbol": output.contagion_symbol,
+        "id": event.id,
+        "event_type": event_type,
+        "event_type_key": event_type_key,
+        "title": title,
+        "summary": resume,
+        "body": resume,
+        "scoring_rationale": analysis.justification_score
+        or "Analyse automatique sans justification détaillée.",
+        "impact_score": impact_score,
+        "sentiment": sentiment,
+        "confidence_pct": confidence_pct,
+        "horizon": horizon,
+        "contagion_symbol": pick_contagion_symbol(analysis.contagion, portfolio),
         "llm_processed": True,
         "llm_model": llm_model,
         "llm_processed_at": now,
         "llm_fallback_used": llm_fallback_used,
+        "updated_at": now,
+    }
+
+
+def degraded_update_row(event: PendingEvent) -> dict[str, Any]:
+    title = (event.raw_title or "Information sans titre")[:200]
+    body = (event.raw_body or event.raw_title or "Contenu indisponible.")[:2000]
+    now = datetime.now(timezone.utc).isoformat()
+    return {
+        "id": event.id,
+        "event_type": "Rumeur",
+        "event_type_key": "rumor",
+        "title": title,
+        "summary": body[:280] if len(body) > 280 else body,
+        "body": body,
+        "scoring_rationale": (
+            "Analyse LLM indisponible (Gemini et Groq en échec). "
+            "Score conservateur appliqué — vérification manuelle recommandée."
+        ),
+        "impact_score": 25,
+        "sentiment": 0.0,
+        "confidence_pct": 20,
+        "horizon": "short_term",
+        "contagion_symbol": None,
+        "llm_processed": True,
+        "llm_model": "degraded",
+        "llm_processed_at": now,
+        "llm_fallback_used": True,
         "updated_at": now,
     }
 
@@ -342,29 +439,45 @@ def persist_update(client: Client, row: dict[str, Any]) -> None:
     client.table("events").update(row).eq("id", event_id).execute()
 
 
-def process_event(
-    event: PendingEvent,
+def process_batch(
+    events: list[PendingEvent],
     portfolio: dict[str, PortfolioContext],
     gemini_key: str,
     groq_key: str,
-) -> dict[str, Any]:
-    ctx = portfolio.get(event.symbol)
-    if not ctx:
-        log.warning("Event %s : symbol %s hors portefeuille — skip", event.id, event.symbol)
-        output = degraded_output(event)
-        return to_update_row(
-            event.id, output, llm_model="degraded-no-portfolio", llm_fallback_used=True
-        )
+) -> list[dict[str, Any]]:
+    if not gemini_key and not groq_key:
+        log.warning("GEMINI_API_KEY et GROQ_API_KEY absents — mode dégradé pour le batch.")
+        return [degraded_update_row(e) for e in events]
 
-    user_prompt = build_user_prompt(event, ctx)
+    clusters = [event_to_cluster(e) for e in events]
+    prompt = build_analysis_prompt(clusters, portfolio)
 
     try:
-        output, model, fallback = analyze_with_llm(user_prompt, gemini_key, groq_key)
-        return to_update_row(event.id, output, llm_model=model, llm_fallback_used=fallback)
+        analyses, model, fallback = analyze_batch_with_llm(prompt, gemini_key, groq_key)
     except LlmError as exc:
-        log.warning("LLM échec pour %s (%s) — mode dégradé", event.id, exc)
-        output = degraded_output(event)
-        return to_update_row(event.id, output, llm_model="degraded", llm_fallback_used=True)
+        log.warning("LLM batch échec (%s) — mode dégradé pour %d events", exc, len(events))
+        return [degraded_update_row(e) for e in events]
+
+    by_id = {a.cluster_id: a for a in analyses}
+    rows: list[dict[str, Any]] = []
+
+    for event in events:
+        analysis = by_id.get(event.id)
+        if not analysis:
+            log.warning("Event %s absent de la réponse LLM — mode dégradé", event.id[:8])
+            rows.append(degraded_update_row(event))
+            continue
+        rows.append(
+            map_analysis_to_update(
+                event,
+                analysis,
+                portfolio,
+                llm_model=model,
+                llm_fallback_used=fallback,
+            )
+        )
+
+    return rows
 
 
 def run() -> None:
@@ -386,10 +499,10 @@ def run() -> None:
 
     stats = {"ok": 0, "degraded": 0, "fallback": 0}
 
-    for event in events:
-        row = process_event(event, portfolio, gemini_key, groq_key)
+    rows = process_batch(events, portfolio, gemini_key, groq_key)
+    for event, row in zip(events, rows):
         persist_update(client, row)
-        if row.get("llm_model") == "degraded" or row.get("llm_model") == "degraded-no-portfolio":
+        if row.get("llm_model") == "degraded":
             stats["degraded"] += 1
         elif row.get("llm_fallback_used"):
             stats["fallback"] += 1
