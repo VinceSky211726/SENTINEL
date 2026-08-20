@@ -2,3 +2,4 @@ aiohttp
 supabase
 python-dotenv
 pydantic
+datasketch
