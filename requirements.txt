@@ -1,0 +1,4 @@
+aiohttp
+supabase
+python-dotenv
+pydantic
